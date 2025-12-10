@@ -23,6 +23,29 @@ typedef struct{
     int nextLight;
 } SharedData;
 
+//Node for queue
+typedef struct VehicleNode{
+    char vehicleNumber[10]; //unique id for the vehicle
+    char road; //road the vehicle is in
+    struct VehicleNode* next; //pointer to point at next vehiclenode in queue
+}VehicleNode;
+
+//Queue 
+typedef struct Queue{
+    VehicleNode* front;
+    VehicleNode* rear;
+    int size;
+}Queue;
+
+typedef struct QueueData {
+    Queue* queueA;
+    Queue* queueB;
+    Queue* queueC;
+    Queue* queueD;
+    int currentLane;// 0 1 2 3 for A B C D
+    int priorityMode;//0 for normal and 1 fr priority
+}QueueData;
+
 
 // Function declarations
 bool initializeSDL(SDL_Window **window, SDL_Renderer **renderer);
