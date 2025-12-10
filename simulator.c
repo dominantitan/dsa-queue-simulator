@@ -7,7 +7,7 @@
 #include <string.h>
 
 #define MAX_LINE_LENGTH 20
-#define MAIN_FONT "/usr/share/fonts/TTF/DejaVuSans.ttf"
+#define MAIN_FONT "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
 #define SCALE 1
@@ -30,7 +30,7 @@ void drawRoadsAndLane(SDL_Renderer *renderer, TTF_Font *font);
 void displayText(SDL_Renderer *renderer, TTF_Font *font, char *text, int x, int y);
 void drawLightForB(SDL_Renderer* renderer, bool isRed);
 void refreshLight(SDL_Renderer *renderer, SharedData* sharedData);
-void* chequeQueue(void* arg);
+void* checkQueue(void* arg);
 void* readAndParseFile(void* arg);
 
 
@@ -61,7 +61,7 @@ int main() {
 
     // we need to create seprate long running thread for the queue processing and light
     // pthread_create(&tLight, NULL, refreshLight, &sharedData);
-    pthread_create(&tQueue, NULL, chequeQueue, &sharedData);
+    pthread_create(&tQueue, NULL, checkQueue, &sharedData);
     pthread_create(&tReadFile, NULL, readAndParseFile, NULL);
     // readAndParseFile();
 
@@ -126,7 +126,7 @@ void swap(int *a, int *b) {
 }
 
 
-void drawArrwow(SDL_Renderer* renderer, int x1, int y1, int x2, int y2, int x3, int y3) {
+void drawArrow(SDL_Renderer* renderer, int x1, int y1, int x2, int y2, int x3, int y3) {
     // Sort vertices by ascending Y (bubble sort approach)
     if (y1 > y2) { swap(&y1, &y2); swap(&x1, &x2); }
     if (y1 > y3) { swap(&y1, &y3); swap(&x1, &x3); }
@@ -167,7 +167,7 @@ void drawLightForB(SDL_Renderer* renderer, bool isRed){
     else SDL_SetRenderDrawColor(renderer, 11, 156, 50, 255);    // green
     SDL_Rect straight_Light = {405, 305, 20, 20};
     SDL_RenderFillRect(renderer, &straight_Light);
-    drawArrwow(renderer, 435,305, 435, 305+20, 435+10, 305+10);
+    drawArrow(renderer, 435,305, 435, 305+20, 435+10, 305+10);
 }
 
 
@@ -243,7 +243,7 @@ void refreshLight(SDL_Renderer *renderer, SharedData* sharedData){
 }
 
 
-void* chequeQueue(void* arg){
+void* checkQueue(void* arg){
     SharedData* sharedData = (SharedData*)arg;
     int i = 1;
     while (1) {
