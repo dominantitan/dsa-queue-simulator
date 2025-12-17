@@ -41,6 +41,36 @@ typedef struct Queue
     int size;
 } Queue;
 
+void initQueue(Queue *queue){
+    queue->front = NULL;
+    queue->rear = NULL;
+    queue->size = 0;
+}
+
+void enqueue(Queue *queue,const char *vehicleNumber,char road)
+{
+    VehicleNode *newNode = (VehicleNode *)malloc(sizeof(VehicleNode));
+    if(!newNode){
+        return;
+    }
+
+    strncpy(newNode->vehicleNumber,vehicleNumber,sizeof(newNode->vehicleNumber)-1);
+    newNode->vehicleNumber[sizeof(newNode->vehicleNumber)-1] = '\0';
+    newNode->road = road;
+    newNode->next = NULL;
+
+    if (queue->rear == NULL){
+        queue->front = newNode;
+        queue->rear = newNode;
+
+    }else{
+        queue->rear->next = newNode;
+        queue->rear = newNode;
+    }
+    queue->size++;
+    SDL_Log("enqueue vehicle %s to road %c (Queue size: %d)", vehicleNumber, road, queue->size);
+}
+
 typedef struct QueueData
 {
     Queue *queueA;
@@ -80,6 +110,13 @@ int main()
     }
     SDL_mutex *mutex = SDL_CreateMutex();
     SharedData sharedData = {0, 0}; // 0 => all red
+
+    //initializing queue dat 
+    QueueData queueData;
+    queueData.queueA = (Queue *)malloc(sizeof(Queue));
+    queueData.queueB = (Queue *)malloc(sizeof(Queue));
+    queueData.queueC = (Queue *)malloc(sizeof(Queue));
+    queueData.queueD = (Queue *)malloc(sizeof(Queue));
 
     TTF_Font *font = TTF_OpenFont(MAIN_FONT, 24);
     if (!font)
