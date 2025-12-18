@@ -71,6 +71,42 @@ void enqueue(Queue *queue,const char *vehicleNumber,char road)
     SDL_Log("enqueue vehicle %s to road %c (Queue size: %d)", vehicleNumber, road, queue->size);
 }
 
+VehicleNode *dequeue(Queue *queue){
+    if (queue->front == NULL){
+        return NULL;
+    }
+    VehicleNode *temp = queue->front;
+    queue->front = queue->front->next;
+
+    if(queue->front == NULL){
+        queue->rear = NULL;
+    }
+
+    queue->size--;
+    SDL_Log("dequeue vehicle %s from road %c (Queue size: %d)", temp->vehicleNumber, temp->road, queue->size);
+    return temp;
+}
+
+int getQueueSize(Queue *queue){
+    return queue->size;
+}
+
+VehicleNode *peekQueue(Queue *queue){
+    return queue->front;
+}
+
+void freeQueue(Queue *queue){
+    VehicleNode *current = queue->front;
+    while(current != NULL){
+        VehicleNode *temp =current;
+        current = current->next;
+        free(temp);
+    }
+    queue->front = NULL;
+    queue->rear = NULL;
+    queue->size = 0;
+}
+
 typedef struct QueueData
 {
     Queue *queueA;
