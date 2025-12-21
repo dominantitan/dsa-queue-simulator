@@ -418,12 +418,14 @@ void *checkQueue(void *arg)
 // you may need to pass the queue on this function for sharing the data
 void *readAndParseFile(void *arg)
 {
+    QueueData *queueData = (QueueData *)arg;
     while (1)
     {
         FILE *file = fopen(VEHICLE_FILE, "r");
         if (!file)
         {
-            perror("Error opening file");
+            SDl_Log("waiting for vehicle file...");
+            sleep(2);
             continue;
         }
 
@@ -435,12 +437,13 @@ void *readAndParseFile(void *arg)
 
             // Split using ':'
             char *vehicleNumber = strtok(line, ":");
-            char *road = strtok(NULL, ":"); // read next item resulted from split
+            char *roadStr = strtok(NULL, ":"); // read next item resulted from split
 
-            if (vehicleNumber && road)
-                printf("Vehicle: %s, Raod: %s\n", vehicleNumber, road);
-            else
-                printf("Invalid format: %s\n", line);
+            if (vehicleNumber && roadStr){
+                char road = roadStr[0]; //getting first character
+                SDL_LockMutex(queueData->mutex);
+
+            }
         }
         fclose(file);
         sleep(2); // manage this time
