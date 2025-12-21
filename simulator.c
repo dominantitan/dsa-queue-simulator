@@ -145,7 +145,6 @@ int main()
         return -1;
     }
     SDL_mutex *mutex = SDL_CreateMutex();
-    SharedData sharedData = {0, 0}; // 0 => all red
 
     //initializing queue dat 
     QueueData queueData;
@@ -153,6 +152,19 @@ int main()
     queueData.queueB = (Queue *)malloc(sizeof(Queue));
     queueData.queueC = (Queue *)malloc(sizeof(Queue));
     queueData.queueD = (Queue *)malloc(sizeof(Queue));
+
+    initQueue(queueData.queueA);
+    initQueue(queueData.queueB);
+    initQueue(queueData.queueC);
+    initQueue(queueData.queueD);
+
+    queueData.currentLane = 0;// start with lane A
+    queueData.priorityMode = 0;// normal mode
+    queueData.mutex = mutex;
+
+    SharedData sharedData = {0, 0}; // 0 => all red
+    sharedData.queueData = &queueData;
+
 
     TTF_Font *font = TTF_OpenFont(MAIN_FONT, 24);
     if (!font)
@@ -165,9 +177,10 @@ int main()
     SDL_RenderPresent(renderer);
 
     // we need to create seprate long running thread for the queue processing and light
+
     // pthread_create(&tLight, NULL, refreshLight, &sharedData);
-    pthread_create(&tQueue, NULL, checkQueue, &sharedData);
-    pthread_create(&tReadFile, NULL, readAndParseFile, NULL);
+    pthread_create(&tQueue,NULL,checkQueue,&sharedData);
+    pthread_create(&tReadFile,NULL,readAndParseFile,&queueData);
     // readAndParseFile();
 
     // Continue the UI thread
@@ -176,11 +189,28 @@ int main()
     {
         // update light
         refreshLight(renderer, &sharedData);
+
+        SDL_LockMutex(mutex);
+        drawVehicles(renderer,font,&queueData);
+        SDL_UnlockMutex(mutex);
         while (SDL_PollEvent(&event))
             if (event.type == SDL_QUIT)
                 running = false;
+
+        SDL_Delay(16);
     }
+
+    //memory management
     SDL_DestroyMutex(mutex);
+    freeQueue(queueData.queueA);
+    freeQueue(queueData.queueB);
+    freeQueue(queueData.queueC);
+    freeQueue(queueData.queueD);
+    free(queueData.queueA);
+    free(queueData.queueB);
+    free(queueData.queueC);
+    free(queueData.queueD);
+    TTF_CloseFont(font);
     if (renderer)
         SDL_DestroyRenderer(renderer);
     if (window)
