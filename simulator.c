@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define MAX_LINE_LENGTH 20
 #define MAIN_FONT "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -21,8 +22,8 @@
 #define TIME_PER_VEHICLE 1  // seconds per vehicle
 
 //vehicle box dimensions
-#define VEHICLE_WIDTH 40;
-#define VEHICLE_HEIGHT 20;
+#define VEHICLE_WIDTH 40
+#define VEHICLE_HEIGHT 20
 
 
 
@@ -149,6 +150,46 @@ void printMessageHelper(const char *message, int count)
 {
     for (int i = 0; i < count; i++)
         printf("%s\n", message);
+}
+
+void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
+{
+    SDL_Color textColor = {255, 255, 255, 255}; // White text
+    
+    // drawing vehicles for each lane
+    // for lane A top and going down 
+    VehicleNode *current = queueData->queueA->front;
+    int yPos = 50;
+    int count = 0;
+
+    while (current != NULL && count < 10)
+    {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // Blue
+        SDL_Rect vehicleRect = {
+            WINDOW_WIDTH / 2 - LANE_WIDTH / 2,
+            yPos,
+            VEHICLE_WIDTH,
+            VEHICLE_HEIGHT
+        };
+        SDL_RenderFillRect(renderer, &vehicleRect);
+        
+        // Draw vehicle number
+        char text[10];
+        snprintf(text, sizeof(text), "%s", current->vehicleNumber);
+        displayText(renderer, font, text, vehicleRect.x + 5, vehicleRect.y + 2);
+        
+        current = current->next;
+        yPos += VEHICLE_HEIGHT + 5;
+        count++;
+
+    }
+
+
+    // for lane B bottom and going up
+
+    // for lane C right and going left
+
+    // for lane D left and going right
 }
 
 int main()
