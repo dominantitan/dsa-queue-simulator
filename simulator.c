@@ -443,9 +443,30 @@ void *readAndParseFile(void *arg)
                 char road = roadStr[0]; //getting first character
                 SDL_LockMutex(queueData->mutex);
 
+                switch (road){
+                    case 'A':
+                        enqueue(queueData->queueA,vehicleNumber, road);
+                        break;
+                    case 'B':
+                        enqueue(queueData->queueB,vehicleNumber, road);
+                        break;
+                    case 'C':
+                        enqueue(queueData->queueC,vehicleNumber, road);
+                        break;
+                    case 'D':
+                        enqueue(queueData->queueD,vehicleNumber, road);
+                        break;
+                    default:
+                        SDL_Log("Unknown road: %c",road);
+
+                }
+
+            }else{
+                        SDL_UnlockMutex(queueData->mutex);
             }
         }
         fclose(file);
         sleep(2); // manage this time
     }
+    return NULL;
 }
