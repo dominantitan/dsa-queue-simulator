@@ -20,6 +20,11 @@
 #define PRIORITY_THRESHOLD_LOW 5
 #define TIME_PER_VEHICLE 1  // seconds per vehicle
 
+//vehicle box dimensions
+#define VEHICLE_WIDTH 40;
+#define VEHICLE_HEIGHT 20;
+
+
 
 const char *VEHICLE_FILE = "vehicles.data";
 
@@ -46,6 +51,33 @@ typedef struct Queue
     VehicleNode *rear;
     int size;
 } Queue;
+
+typedef struct QueueData
+{
+    Queue *queueA;
+    Queue *queueB;
+    Queue *queueC;
+    Queue *queueD;
+    int currentLane;  // 0 1 2 3 for A B C D
+    int priorityMode; // 0 for normal and 1 fr priority
+    SDL_mutex *mutex;
+} QueueData;
+
+// Function declarations
+bool initializeSDL(SDL_Window **window, SDL_Renderer **renderer);
+void drawRoadsAndLane(SDL_Renderer *renderer, TTF_Font *font);
+void displayText(SDL_Renderer *renderer, TTF_Font *font, char *text, int x, int y);
+void drawLightForB(SDL_Renderer *renderer, bool isRed);
+void refreshLight(SDL_Renderer *renderer, SharedData *sharedData);
+void *checkQueue(void *arg);
+void *readAndParseFile(void *arg);
+void initQueue(Queue *queue);
+void enqueue(Queue *queue, const char *vehicleNumber, char road);
+VehicleNode *dequeue(Queue *queue);
+int getQueueSize(Queue *queue);
+VehicleNode *peekQueue(Queue *queue);
+void freeQueue(Queue *queue);
+void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData);
 
 void initQueue(Queue *queue){
     queue->front = NULL;
@@ -112,26 +144,6 @@ void freeQueue(Queue *queue){
     queue->rear = NULL;
     queue->size = 0;
 }
-
-typedef struct QueueData
-{
-    Queue *queueA;
-    Queue *queueB;
-    Queue *queueC;
-    Queue *queueD;
-    int currentLane;  // 0 1 2 3 for A B C D
-    int priorityMode; // 0 for normal and 1 fr priority
-    SDL_mutex *mutex;
-} QueueData;
-
-// Function declarations
-bool initializeSDL(SDL_Window **window, SDL_Renderer **renderer);
-void drawRoadsAndLane(SDL_Renderer *renderer, TTF_Font *font);
-void displayText(SDL_Renderer *renderer, TTF_Font *font, char *text, int x, int y);
-void drawLightForB(SDL_Renderer *renderer, bool isRed);
-void refreshLight(SDL_Renderer *renderer, SharedData *sharedData);
-void *checkQueue(void *arg);
-void *readAndParseFile(void *arg);
 
 void printMessageHelper(const char *message, int count)
 {
@@ -459,7 +471,7 @@ void *checkQueue(void *arg)
             }
             //Calculate average vehicles to serve 
             int totalVehicles = sizeA + sizeB + sizeC + sizeD;
-            int avgVehicles = totalVehicles/4;
+            int avgVehicles = (totalVehicles+3)/4;
 
             SDL_Log("normal mode service lane %d with %d vehicles (average; %d)",laneToServe,vehiclesToServe, avgVehicles);
             
