@@ -453,17 +453,60 @@ void *checkQueue(void *arg)
                 break;
                 case 2: currentQueue = queueData->queueC;
                 break;
-                case 3: currentQueue = queueData->queueA;
+                case 3: currentQueue = queueData->queueD;
                 break;
                 
             }
+            //Calculate average vehicles to serve 
+            int totalVehicles = sizeA + sizeB + sizeC + sizeD;
+            int avgVehicles = totalVehicles/4;
 
+            SDL_Log("normal mode service lane %d with %d vehicles (average; %d)",laneToServe,vehiclesToServe, avgVehicles);
+            
+            // move tot next lane for next cycle 
+            queueData->currentLane = (queueData->currentLane + 1) % 4;
+            
         }
-        
-        sleep(5);
-        sharedData->nextLight = 2;
-        sleep(5);
+
+        SDL_UnlockMutex(queueData->mutex);
+
+        //setting traffic light to red( all stop)
+        sharedData->nextLight = 0;
+        sleep(1);
+
+        //setting traffic light to green for serving lane
+        sharedData->nextLight = laneToServe + 1;
+
+        //Process vehicles
+        int greenLightTime = vehiclesToServe * TIME_PER_VEHICLE;
+        if(greenLightTime > 0){
+            SDL_Log("green light for lane %d for %d seconds",laneToServe,greenLightTime);
+            for (int i = 0; i < vehiclesToServe;i++){
+                SDL_LockMutex(queueData->mutex);
+                Queue *queue = NULL;
+                switch(laneToServe){
+                    case0: queue = queueData->queueA;
+                    break;
+                
+                    case1: queue = queueData->queueB;
+                    break;
+
+                    case2: queue = queueData->queueC;
+                    break;
+
+                    case3: queue = queueData->queueD;
+                    break;
+                }
+
+                SDL_UnlockMutex(queueData->mutex);
+                sleep(TIME_PER_VEHICLE);
+            }
+        }
+        else{
+            sleep(2);
+        }
     }
+    return NULL;
 }
 
 // you may need to pass the queue on this function for sharing the data
