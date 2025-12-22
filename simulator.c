@@ -15,6 +15,12 @@
 #define LANE_WIDTH 50
 #define ARROW_SIZE 15
 
+//checkQueue constants
+#define PRIORITY_THRESHOLD_HIGH 10
+#define PRIORITY_THRESHOLD_LOW 5
+#define TIME_PER_VEHICLE 1  // seconds per vehicle
+
+
 const char *VEHICLE_FILE = "vehicles.data";
 
 typedef struct
@@ -405,10 +411,55 @@ void refreshLight(SDL_Renderer *renderer, SharedData *sharedData)
 void *checkQueue(void *arg)
 {
     SharedData *sharedData = (SharedData *)arg;
-    int i = 1;
+    QueueData *queueData = sharedData->queueData;
     while (1)
     {
-        sharedData->nextLight = 0;
+        SDL_LockMutex(queueData->mutex);
+
+        //to check if the lane A(aL2) priority
+        int sizeA = getQueueSize(queueData->queueA);
+
+        if (sizeA > PRIORITY_THRESHOLD_HIGH){
+            queueData->priorityMode = 1;
+            SDL_Log("Priority mode activated!! lane A has %d vehicles",sizeA);
+        }else if(sizeA < PRIORITY_THRESHOLD_LOW && queueData->priorityMode == 1){
+            queueData->priorityMode = 0;
+            SDL_Log("Normal Mode continued!! lane A has %d vehicle",sizeA);
+        }
+
+        int laneToServe;
+        int vehiclesToServe;
+
+        if(queueData->priorityMode == 1){
+            //priority mode serve lane A
+            laneToServe = 0;
+            vehiclesToServe = sizeA;
+            SDL_Log("serving priority lane A with %d vehicles",vehiclesToServe);
+        }else {
+            //normal mode serve fairly
+            int sizeB = getQueueSize(queueData->queueB);
+            int sizeC = getQueueSize(queueData->queueC);
+            int sizeD = getQueueSize(queueData->queueD);
+
+            //changing lanes to serve
+            laneToServe = queueData->currentLane;
+
+            //get size of current lane
+            Queue *currentQueue = NULL;
+            switch(laneToServe){
+                case 0: currentQueue = queueData->queueA;
+                break;
+                case 1: currentQueue = queueData->queueB;
+                break;
+                case 2: currentQueue = queueData->queueC;
+                break;
+                case 3: currentQueue = queueData->queueA;
+                break;
+                
+            }
+
+        }
+        
         sleep(5);
         sharedData->nextLight = 2;
         sleep(5);
