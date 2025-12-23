@@ -164,7 +164,7 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
 
     while (current != NULL && count < 10)
     {
-        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // Blue
+        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // blue
         SDL_Rect vehicleRect = {
             WINDOW_WIDTH / 2 - LANE_WIDTH / 2,
             yPos,
@@ -186,10 +186,74 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
 
 
     // for lane B bottom and going up
+    current = queueData->queueB->front;
+    yPos = WINDOW_HEIGHT - 50 - VEHICLE_HEIGHT;
+    count = 0;
+    while( current != NULL && count < 10){
+        SDL_SetRenderDrawColor(renderer, 255, 0,0,255);
+        SDL_Rect vehicleRect = {
+            WINDOW_WIDTH/2 + LANE_WIDTH / 2 - VEHICLE_WIDTH,
+            yPos,
+            VEHICLE_WIDTH,
+            VEHICLE_HEIGHT
+        };
+        SDL_RenderFillRect(renderer, &vehicleRect);
+
+        char text[10];
+        snprintf(text,sizeof(text),"%s",current->vehicleNumber);
+        displayText(renderer, font,text,vehicleRect.x + 5, vehicleRect.y + 2);
+        current = current->next;
+        yPos -= VEHICLE_HEIGHT + 5;
+        count++;
+    }
 
     // for lane C right and going left
+    current = queueData->queueC->front;
+    int xPos = WINDOW_WIDTH - 50 - VEHICLE_WIDTH;
+    count = 0;
+    while (current != NULL && count < 10)
+    {
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Green
+        SDL_Rect vehicleRect = {
+            xPos,
+            WINDOW_HEIGHT / 2 - LANE_WIDTH / 2,
+            VEHICLE_WIDTH,
+            VEHICLE_HEIGHT
+        };
+        SDL_RenderFillRect(renderer, &vehicleRect);
+        
+        char text[10];
+        snprintf(text, sizeof(text), "%s", current->vehicleNumber);
+        displayText(renderer, font, text, vehicleRect.x + 5, vehicleRect.y + 2);
+        
+        current = current->next;
+        xPos -= (VEHICLE_WIDTH + 5);
+        count++;
+    }
 
     // for lane D left and going right
+    current = queueData->queueD->front;
+    xPos = 50;
+    count = 0;
+    while (current != NULL && count < 10)
+    {
+        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow
+        SDL_Rect vehicleRect = {
+            xPos,
+            WINDOW_HEIGHT / 2 + LANE_WIDTH / 2 - VEHICLE_HEIGHT,
+            VEHICLE_WIDTH,
+            VEHICLE_HEIGHT
+        };
+        SDL_RenderFillRect(renderer, &vehicleRect);
+        
+        char text[10];
+        snprintf(text, sizeof(text), "%s", current->vehicleNumber);
+        displayText(renderer, font, text, vehicleRect.x + 5, vehicleRect.y + 2);
+        
+        current = current->next;
+        xPos += (VEHICLE_WIDTH + 5);
+        count++;
+    }
 }
 
 int main()
