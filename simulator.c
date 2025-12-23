@@ -25,9 +25,9 @@
 #define VEHICLE_WIDTH 40
 #define VEHICLE_HEIGHT 20
 
-
-
 const char *VEHICLE_FILE = "vehicles.data";
+
+typedef struct QueueData QueueData;
 
 typedef struct
 {
@@ -68,6 +68,7 @@ typedef struct QueueData
 bool initializeSDL(SDL_Window **window, SDL_Renderer **renderer);
 void drawRoadsAndLane(SDL_Renderer *renderer, TTF_Font *font);
 void displayText(SDL_Renderer *renderer, TTF_Font *font, char *text, int x, int y);
+void drawTrafficLight(SDL_Renderer *renderer, int lane, bool isGreen);
 void drawLightForB(SDL_Renderer *renderer, bool isRed);
 void refreshLight(SDL_Renderer *renderer, SharedData *sharedData);
 void *checkQueue(void *arg);
@@ -90,6 +91,7 @@ void enqueue(Queue *queue,const char *vehicleNumber,char road)
 {
     VehicleNode *newNode = (VehicleNode *)malloc(sizeof(VehicleNode));
     if(!newNode){
+        SDL_Log("failed to allocate memory for new vehicle node");
         return;
     }
 
@@ -487,6 +489,58 @@ void drawRoadsAndLane(SDL_Renderer *renderer, TTF_Font *font)
     displayText(renderer, font, "B", 400, 770);
     displayText(renderer, font, "D", 10, 400);
     displayText(renderer, font, "C", 770, 400);
+}
+void drawTrafficLight(SDL_Renderer *renderer, int lane, bool isGreen)
+{
+    int x, y;
+    switch (lane) {
+        case 0: // Lane A (top)
+            x = WINDOW_WIDTH / 2 + ROAD_WIDTH / 2 + 10;
+            y = WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 - 40;
+            break;
+        case 1: // Lane B (bottom)
+            x = WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 - 50;
+            y = WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2 + 10;
+            break;
+        case 2: // Lane C (right)
+            x = WINDOW_WIDTH / 2 + ROAD_WIDTH / 2 + 10;
+            y = WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2 + 10;
+            break;
+        case 3: // Lane D (left)
+            x = WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 - 50;
+            y = WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 - 40;
+            break;
+        default:
+            return;
+    }
+
+    //Draw light box
+    SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
+    SDL_Rect lightBox = {x, y, 40, 30};
+    SDL_RenderFillRect(renderer, &lightBox);
+
+    // draw red light
+    if (!isGreen)
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+    else
+        SDL_SetRenderDrawColor(renderer, 100, 0, 0, 255);
+    SDL_Rect redLight = {x + 5, y + 5, 12, 12};
+    SDL_RenderFillRect(renderer, &redLight);
+
+    //draw green light
+    if (isGreen)
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+    else
+        SDL_SetRenderDrawColor(renderer, 0, 100, 0, 255);
+    SDL_Rect greenLight = {x + 22, y + 5, 12, 12};
+    SDL_RenderFillRect(renderer, &greenLight);
+}
+
+void drawAllTrafficLights(SDL_Renderer *renderer, int activeLane)
+{
+    for (int i = 0; i < 4; i++) {
+        drawTrafficLight(renderer, i, (i == activeLane));
+    }
 }
 
 void displayText(SDL_Renderer *renderer, TTF_Font *font, char *text, int x, int y)
