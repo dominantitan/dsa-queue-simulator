@@ -258,97 +258,140 @@ void updateQueueTargets(Queue *queue)
 
 void updateVehicles(QueueData *queueData, float deltaTime){
     //Function to implement update the properties of vehicles for drawing
+    float movement = VEHICLE_SPEED * deltaTime;
+    Queue *queues[] = {queueData->queueA,queueData->queueB,queueData->queueC,queueData->queueD};
+    int laneIndex[] = {0, 1, 2, 3};
+
+    for (int q = 0; q < 4; q++) {
+        Queue *queue = queues[q];
+        VehicleNode *current = queue->front;
+        VehicleNode *prev = NULL;
+        bool isFirstVehicle = true;
+
+        while (current != NULL) {
+            VehicleNode *next = current->next;
+
+            if (current->hasCrossed) {
+                //Vehicle is crossing - move through intersection
+                current->x = moveTowards(current->x, current->targetX, movement);
+                current->y = moveTowards(current->y, current->targetY, movement);
+
+                //Check if vehicle is off screen
+                bool offScreen = false;
+                switch (current->road) {
+                    case 'A': offScreen = (current->y > WINDOW_HEIGHT + VEHICLE_HEIGHT); break;
+                    case 'B': offScreen = (current->y < -VEHICLE_HEIGHT); break;
+                    case 'C': offScreen = (current->x < -VEHICLE_WIDTH); break;
+                    case 'D': offScreen = (current->x > WINDOW_WIDTH + VEHICLE_WIDTH); break;
+                }
+
+                if (offScreen) {
+                    //Remove vehicle from queue
+                    if (prev == NULL) {
+                        queue->front = next;
+                    } else {
+                        prev->next = next;
+                    }
+                    if (queue->rear == current) {
+                        queue->rear = prev;
+                    }
+                    queue->size--;
+                    SDL_Log("Vehicle %s exited screen from road %c", current->vehicleNumber, current->road);
+                    free(current);
+                    current = next;
+                    continue;
+                }
+            } else if (current->isMoving) {
+                //Move towards target (stop line)
+                current->x = moveTowards(current->x, current->targetX, movement);
+                current->y = moveTowards(current->y, current->targetY, movement);
+
+                //Check if reached target
+                if (fabsf(current->x - current->targetX) < 0.5f && 
+                    fabsf(current->y - current->targetY) < 0.5f) {
+                    current->isMoving = false;
+                }
+            }
+
+            //Check if first vehicle should cross (green light)
+            if (isFirstVehicle && !current->hasCrossed && !current->isMoving) {
+                if (queueData->activeLane == laneIndex[q]) {
+                    //Green light - start crossing
+                    current->hasCrossed = true;
+                    current->isMoving = true;
+                    
+                    //Set exit target (opposite side of screen)
+                    switch (current->road) {
+                        case 'A':
+                            current->targetX = current->x;
+                            current->targetY = WINDOW_HEIGHT + VEHICLE_HEIGHT + 50;
+                            break;
+                        case 'B':
+                            current->targetX = current->x;
+                            current->targetY = -VEHICLE_HEIGHT - 50;
+                            break;
+                        case 'C':
+                            current->targetX = -VEHICLE_WIDTH - 50;
+                            current->targetY = current->y;
+                            break;
+                        case 'D':
+                            current->targetX = WINDOW_WIDTH + VEHICLE_WIDTH + 50;
+                            current->targetY = current->y;
+                            break;
+                    }
+                    SDL_Log("Vehicle %s crossing intersection from road %c", current->vehicleNumber, current->road);
+                    
+                    //Update targets for remaining vehicles
+                    updateQueueTargets(queue);
+                }
+            }
+
+            isFirstVehicle = false;
+            prev = current;
+            current = next;
+        }
+    }
 }
 
 void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
 {
-    // drawing vehicles for each lane
-    // for lane A top and going down 
-    VehicleNode *current = queueData->queueA->front;
-    int yPos = 50;
-    int count = 0;
+    Queue *queues[] = {queueData->queueA, queueData->queueB, queueData->queueC, queueData->queueD};
+    SDL_Color colors[] = {
+        {0, 100, 255, 255},    // Blue for A
+        {255, 50, 50, 255},    // Red for B
+        {50, 255, 50, 255},    // Green for C
+        {255, 255, 50, 255}    // Yellow for D
+    };
 
-    while (current != NULL && count < 10)
-    {
-        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // blue
-        SDL_Rect vehicleRect = {
-            WINDOW_WIDTH / 2 - LANE_WIDTH / 2 + 5,
-            yPos,
-            VEHICLE_WIDTH,
-            VEHICLE_HEIGHT
-        };
-        SDL_RenderFillRect(renderer, &vehicleRect);
-        //displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 5, vehicleRect.y + 2);
+    for (int q = 0; q < 4; q++) {
+        VehicleNode *current = queues[q]->front;
         
-        current = current->next;
-        yPos += VEHICLE_HEIGHT + 5;
-        count++;
-
-    }
-
-
-    // for lane B bottom and going up
-    current = queueData->queueB->front;
-    yPos = WINDOW_HEIGHT - 50 - VEHICLE_HEIGHT;
-    count = 0;
-    while( current != NULL && count < 10){
-        SDL_SetRenderDrawColor(renderer, 255, 0,0,255);//
-        SDL_Rect vehicleRect = {
-            WINDOW_WIDTH/2 + 5,
-            yPos,
-            VEHICLE_WIDTH,
-            VEHICLE_HEIGHT
-        };
-        SDL_RenderFillRect(renderer, &vehicleRect);
-
-        //displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 5, vehicleRect.y + 2);
-        current = current->next;
-        yPos -= VEHICLE_HEIGHT + 5;
-        count++;
-    }
-
-    // for lane C right and going left
-    current = queueData->queueC->front;
-    int xPos = WINDOW_WIDTH - 50 - VEHICLE_WIDTH;
-    count = 0;
-    while (current != NULL && count < 10)
-    {
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Green
-        SDL_Rect vehicleRect = {
-            xPos,
-            WINDOW_HEIGHT / 2 - LANE_WIDTH / 2,
-            VEHICLE_WIDTH,
-            VEHICLE_HEIGHT
-        };
-        SDL_RenderFillRect(renderer, &vehicleRect);
-        
-        //displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 2, vehicleRect.y + 10);
-        
-        current = current->next;
-        xPos -= (VEHICLE_WIDTH + 5);
-        count++;
-    }
-
-    // for lane D left and going right
-    current = queueData->queueD->front;
-    xPos = 50;
-    count = 0;
-    while (current != NULL && count < 10)
-    {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow
-        SDL_Rect vehicleRect = {
-            xPos,
-            WINDOW_HEIGHT / 2 + LANE_WIDTH / 2 - VEHICLE_HEIGHT,
-            VEHICLE_WIDTH,
-            VEHICLE_HEIGHT
-        };
-        SDL_RenderFillRect(renderer, &vehicleRect);
-        
-        //displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 2, vehicleRect.y + 10);
-        
-        current = current->next;
-        xPos += (VEHICLE_WIDTH + 5);
-        count++;
+        while (current != NULL) {
+            //Set color based on road
+            SDL_SetRenderDrawColor(renderer, colors[q].r, colors[q].g, colors[q].b, colors[q].a);
+            
+            SDL_Rect vehicleRect;
+            if (current->road == 'A' || current->road == 'B') {
+                //Vertical
+                vehicleRect = (SDL_Rect){
+                    (int)current->x,
+                    (int)current->y,
+                    VEHICLE_WIDTH,
+                    VEHICLE_HEIGHT
+                };
+            } else {
+                //Horizontal
+                vehicleRect = (SDL_Rect){
+                    (int)current->x,
+                    (int)current->y,
+                    VEHICLE_HEIGHT,
+                    VEHICLE_WIDTH
+                };
+            }
+            
+            SDL_RenderFillRect(renderer, &vehicleRect);
+            current = current->next;
+        }
     }
 }
 
@@ -418,6 +461,7 @@ int main()
 
     queueData.currentLane = 0;// start with lane A
     queueData.priorityMode = 0;// normal mode
+    queueData.activeLane = -1;
     queueData.mutex = mutex;
 
     SharedData sharedData = {0, 0, &queueData, mutex};
@@ -436,16 +480,22 @@ int main()
     pthread_create(&tReadFile,NULL,readAndParseFile,&queueData);
     // readAndParseFile();
 
+    //Delta time variables
+    Uint32 lastTime = SDL_GetTicks();
+    Uint32 currentTime;
+    float deltaTime;
+
     // Continue the UI thread
     bool running = true;
     while (running)
     {
         // Handle events first
-        while (SDL_PollEvent(&event))
+        while (SDL_PollEvent(&event)){
             if (event.type == SDL_QUIT)
                 running = false;
-
+        }
         SDL_LockMutex(mutex);
+        updateVehicles(&queueData,deltaTime);
         refreshLight(renderer, &sharedData, font);  // Only call once
         drawVehicles(renderer, font, &queueData);
         drawQueueStatus(renderer, font, &queueData);
