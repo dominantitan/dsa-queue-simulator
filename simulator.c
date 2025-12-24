@@ -390,6 +390,9 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
             }
             
             SDL_RenderFillRect(renderer, &vehicleRect);
+             //Draw border
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(renderer, &vehicleRect);
             current = current->next;
         }
     }
@@ -489,6 +492,9 @@ int main()
     bool running = true;
     while (running)
     {
+        currentTime = SDL_GetTicks();
+        deltaTime = (currentTime - lastTime) / 1000.0f;
+        lastTime = currentTime;
         // Handle events first
         while (SDL_PollEvent(&event)){
             if (event.type == SDL_QUIT)
@@ -762,7 +768,6 @@ void *checkQueue(void *arg)
     {
         SDL_LockMutex(queueData->mutex);
 
-        //to check if the lane A(aL2) priority
         int sizeA = getQueueSize(queueData->queueA);
 
         if (sizeA > PRIORITY_THRESHOLD_HIGH){
@@ -774,23 +779,19 @@ void *checkQueue(void *arg)
         }
 
         int laneToServe;
-        int vehiclesToServe = 1;  // Initialize with default value
+        int vehiclesToServe = 1;
 
         if(queueData->priorityMode == 1){
-            //priority mode serve lane A
             laneToServe = 0;
-            vehiclesToServe = sizeA > 5 ? 5 : sizeA;  // Limit to 5 at a time
+            vehiclesToServe = sizeA > 5 ? 5 : sizeA;
             SDL_Log("serving priority lane A with %d vehicles",vehiclesToServe);
         }else {
-            //normal mode serve fairly
             int sizeB = getQueueSize(queueData->queueB);
             int sizeC = getQueueSize(queueData->queueC);
             int sizeD = getQueueSize(queueData->queueD);
 
-            //changing lanes to serve
             laneToServe = queueData->currentLane;
 
-            //get size of current lane
             int currentSize = 0;
             switch (laneToServe) {
                 case 0: currentSize = sizeA; break;
@@ -798,7 +799,6 @@ void *checkQueue(void *arg)
                 case 2: currentSize = sizeC; break;
                 case 3: currentSize = sizeD; break;
             }
-            //Calculate average vehicles to serve 
             int totalVehicles = sizeA + sizeB + sizeC + sizeD;
             int avgVehicles = (totalVehicles + 3) / 4;
             vehiclesToServe = (currentSize < avgVehicles) ? currentSize : avgVehicles;
@@ -806,49 +806,23 @@ void *checkQueue(void *arg)
 
             SDL_Log("normal mode service lane %d with %d vehicles (average: %d)", laneToServe, vehiclesToServe, avgVehicles);
             
-            // move to next lane for next cycle 
             queueData->currentLane = (queueData->currentLane + 1) % 4;
         }
 
         SDL_UnlockMutex(queueData->mutex);
 
-        //setting traffic light to red( all stop)
+        //RED phase - all lights red
         sharedData->nextLight = 0;
-        sleep(1);
+        queueData->activeLane = -1;
+        SDL_Delay(1000);
 
-        //setting traffic light to green for serving lane
+        //GREEN phase - set active lane (updateVehicles will handle crossing)
         sharedData->nextLight = laneToServe + 1;
+        queueData->activeLane = laneToServe;
+        SDL_Log("green light for lane %d for %d seconds", laneToServe, vehiclesToServe * TIME_PER_VEHICLE);
 
-        //Process vehicles
-        int greenLightTime = vehiclesToServe * TIME_PER_VEHICLE;
-        if(greenLightTime > 0){
-            SDL_Log("green light for lane %d for %d seconds", laneToServe, greenLightTime);
-            for (int i = 0; i < vehiclesToServe; i++){
-                SDL_LockMutex(queueData->mutex);
-                Queue *queue = NULL;
-                switch(laneToServe){
-                    case 0: queue = queueData->queueA; break;  // Fixed: added space
-                    case 1: queue = queueData->queueB; break;  // Fixed: added space
-                    case 2: queue = queueData->queueC; break;  // Fixed: added space
-                    case 3: queue = queueData->queueD; break;  // Fixed: added space
-                }
-
-                if (queue && getQueueSize(queue) > 0) {
-                    VehicleNode *vehicle = dequeue(queue);
-                    if (vehicle) {
-                        SDL_Log("Vehicle %s passed through intersection from lane %c",
-                                vehicle->vehicleNumber, 'A' + laneToServe);
-                        free(vehicle);
-                    }
-                }
-
-                SDL_UnlockMutex(queueData->mutex);
-                sleep(TIME_PER_VEHICLE);
-            }
-        }
-        else{
-            sleep(2); //wait if no vehicles
-        }
+        //Wait for green light duration - vehicles cross during this time via updateVehicles
+        SDL_Delay(vehiclesToServe * TIME_PER_VEHICLE * 1000);
     }
     return NULL;
 }
