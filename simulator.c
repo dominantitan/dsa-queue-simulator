@@ -24,6 +24,15 @@
 //vehicle box dimensions
 #define VEHICLE_WIDTH 20
 #define VEHICLE_HEIGHT 20
+#define VEHICLE_SPEED 100.0f  //pixels per second
+#define VEHICLE_GAP 10        //gap between vehicles
+
+//position where vehicles wait
+#define STOP_LINE_A (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 - VEHICLE_HEIGHT - 5)
+#define STOP_LINE_B (WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2 + 5)
+#define STOP_LINE_C (WINDOW_WIDTH / 2 + ROAD_WIDTH / 2 + 5)
+#define STOP_LINE_D (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 - VEHICLE_WIDTH - 5)
+
 
 const char *VEHICLE_FILE = "vehicles.data";
 
@@ -81,12 +90,63 @@ VehicleNode *peekQueue(Queue *queue);
 void freeQueue(Queue *queue);
 void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData);
 void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData);
+void updateVehicles(QueueData *queueData, float deltaTime);
+void removeOffScreenVehicles(QueueData *queueData);
+float getInitialX(char road);
+float getInitialY(char road);
+float getStopPosition(char road, int queuePosition);
+
 
 void initQueue(Queue *queue){
     queue->front = NULL;
     queue->rear = NULL;
     queue->size = 0;
 }
+
+float getInitialX(char road)
+{
+    switch (road) {
+        case 'A': return WINDOW_WIDTH / 2 - LANE_WIDTH / 2 + 15;  // Coming from top
+        case 'B': return WINDOW_WIDTH / 2 + 15;                    // Coming from bottom
+        case 'C': return WINDOW_WIDTH + VEHICLE_WIDTH;             // Coming from right (off-screen)
+        case 'D': return -VEHICLE_WIDTH;                           // Coming from left (off-screen)
+        default: return 0;
+    }
+}
+
+float getInitialY(char road)
+{
+    switch (road) {
+        case 'A': return -VEHICLE_HEIGHT;                          // Coming from top (off-screen)
+        case 'B': return WINDOW_HEIGHT + VEHICLE_HEIGHT;           // Coming from bottom (off-screen)
+        case 'C': return WINDOW_HEIGHT / 2 - LANE_WIDTH / 2 + 15;  // Coming from right
+        case 'D': return WINDOW_HEIGHT / 2 + 15;                   // Coming from left
+        default: return 0;
+    }
+}
+
+float getStopPositionX(char road, int queuePosition)
+{
+    switch (road) {
+        case 'A': return WINDOW_WIDTH / 2 - LANE_WIDTH / 2 + 15;
+        case 'B': return WINDOW_WIDTH / 2 + 15;
+        case 'C': return STOP_LINE_C + queuePosition * (VEHICLE_WIDTH + VEHICLE_GAP);
+        case 'D': return STOP_LINE_D - queuePosition * (VEHICLE_WIDTH + VEHICLE_GAP);
+        default: return 0;
+    }
+}
+
+float getStopPositionY(char road, int queuePosition)
+{
+    switch (road) {
+        case 'A': return STOP_LINE_A - queuePosition * (VEHICLE_HEIGHT + VEHICLE_GAP);
+        case 'B': return STOP_LINE_B + queuePosition * (VEHICLE_HEIGHT + VEHICLE_GAP);
+        case 'C': return WINDOW_HEIGHT / 2 - LANE_WIDTH / 2 + 15;
+        case 'D': return WINDOW_HEIGHT / 2 + 15;
+        default: return 0;
+    }
+}
+
 
 void enqueue(Queue *queue,const char *vehicleNumber,char road)
 {
