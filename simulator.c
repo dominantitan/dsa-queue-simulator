@@ -22,7 +22,7 @@
 #define TIME_PER_VEHICLE 1  // seconds per vehicle
 
 //vehicle box dimensions
-#define VEHICLE_WIDTH 40
+#define VEHICLE_WIDTH 20
 #define VEHICLE_HEIGHT 20
 
 const char *VEHICLE_FILE = "vehicles.data";
@@ -70,7 +70,7 @@ void drawRoadsAndLane(SDL_Renderer *renderer, TTF_Font *font);
 void displayText(SDL_Renderer *renderer, TTF_Font *font, char *text, int x, int y);
 void drawTrafficLight(SDL_Renderer *renderer, int lane, bool isGreen);
 void drawLightForB(SDL_Renderer *renderer, bool isRed);
-void refreshLight(SDL_Renderer *renderer, SharedData *sharedData);
+void refreshLight(SDL_Renderer *renderer, SharedData *sharedData, TTF_Font *font);
 void *checkQueue(void *arg);
 void *readAndParseFile(void *arg);
 void initQueue(Queue *queue);
@@ -80,6 +80,7 @@ int getQueueSize(Queue *queue);
 VehicleNode *peekQueue(Queue *queue);
 void freeQueue(Queue *queue);
 void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData);
+void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData);
 
 void initQueue(Queue *queue){
     queue->front = NULL;
@@ -156,8 +157,6 @@ void printMessageHelper(const char *message, int count)
 
 void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
 {
-    SDL_Color textColor = {255, 255, 255, 255}; // White text
-    
     // drawing vehicles for each lane
     // for lane A top and going down 
     VehicleNode *current = queueData->queueA->front;
@@ -168,17 +167,13 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
     {
         SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // blue
         SDL_Rect vehicleRect = {
-            WINDOW_WIDTH / 2 - LANE_WIDTH / 2,
+            WINDOW_WIDTH / 2 - LANE_WIDTH / 2 + 5,
             yPos,
             VEHICLE_WIDTH,
             VEHICLE_HEIGHT
         };
         SDL_RenderFillRect(renderer, &vehicleRect);
-        
-        // Draw vehicle number
-        char text[10];
-        snprintf(text, sizeof(text), "%s", current->vehicleNumber);
-        displayText(renderer, font, text, vehicleRect.x + 5, vehicleRect.y + 2);
+        displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 5, vehicleRect.y + 2);
         
         current = current->next;
         yPos += VEHICLE_HEIGHT + 5;
@@ -192,18 +187,16 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
     yPos = WINDOW_HEIGHT - 50 - VEHICLE_HEIGHT;
     count = 0;
     while( current != NULL && count < 10){
-        SDL_SetRenderDrawColor(renderer, 255, 0,0,255);
+        SDL_SetRenderDrawColor(renderer, 255, 0,0,255);//
         SDL_Rect vehicleRect = {
-            WINDOW_WIDTH/2 + LANE_WIDTH / 2 - VEHICLE_WIDTH,
+            WINDOW_WIDTH/2 + 5,
             yPos,
             VEHICLE_WIDTH,
             VEHICLE_HEIGHT
         };
         SDL_RenderFillRect(renderer, &vehicleRect);
 
-        char text[10];
-        snprintf(text,sizeof(text),"%s",current->vehicleNumber);
-        displayText(renderer, font,text,vehicleRect.x + 5, vehicleRect.y + 2);
+        displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 5, vehicleRect.y + 2);
         current = current->next;
         yPos -= VEHICLE_HEIGHT + 5;
         count++;
@@ -224,9 +217,7 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
         };
         SDL_RenderFillRect(renderer, &vehicleRect);
         
-        char text[10];
-        snprintf(text, sizeof(text), "%s", current->vehicleNumber);
-        displayText(renderer, font, text, vehicleRect.x + 5, vehicleRect.y + 2);
+        displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 2, vehicleRect.y + 10);
         
         current = current->next;
         xPos -= (VEHICLE_WIDTH + 5);
@@ -248,13 +239,50 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
         };
         SDL_RenderFillRect(renderer, &vehicleRect);
         
-        char text[10];
-        snprintf(text, sizeof(text), "%s", current->vehicleNumber);
-        displayText(renderer, font, text, vehicleRect.x + 5, vehicleRect.y + 2);
+        displayText(renderer, font, current->vehicleNumber, vehicleRect.x + 2, vehicleRect.y + 10);
         
         current = current->next;
         xPos += (VEHICLE_WIDTH + 5);
         count++;
+    }
+}
+
+void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
+{
+    char statusText[100];
+    
+    //draw status box
+    SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+    SDL_Rect statusBox = {10, 10, 200, 120};
+    SDL_RenderFillRect(renderer, &statusBox);
+    
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderDrawRect(renderer, &statusBox);
+
+    //display queue sizes
+    snprintf(statusText, sizeof(statusText), "A: %d vehicles", getQueueSize(queueData->queueA));
+    displayText(renderer, font, statusText, 20, 20);
+    
+    snprintf(statusText, sizeof(statusText), "B: %d vehicles", getQueueSize(queueData->queueB));
+    displayText(renderer, font, statusText, 20, 45);
+    
+    snprintf(statusText, sizeof(statusText), "C: %d vehicles", getQueueSize(queueData->queueC));
+    displayText(renderer, font, statusText, 20, 70);
+    
+    snprintf(statusText, sizeof(statusText), "D: %d vehicles", getQueueSize(queueData->queueD));
+    displayText(renderer, font, statusText, 20, 95);
+
+    //display mode
+    if (queueData->priorityMode) {
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        SDL_Rect modeBox = {WINDOW_WIDTH - 150, 10, 140, 30};
+        SDL_RenderFillRect(renderer, &modeBox);
+        displayText(renderer, font, "PRIORITY MODE", WINDOW_WIDTH - 145, 15);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+        SDL_Rect modeBox = {WINDOW_WIDTH - 150, 10, 140, 30};
+        SDL_RenderFillRect(renderer, &modeBox);
+        displayText(renderer, font, "NORMAL MODE", WINDOW_WIDTH - 140, 15);
     }
 }
 
@@ -313,7 +341,7 @@ int main()
     while (running)
     {
         // update light
-        refreshLight(renderer, &sharedData);
+        refreshLight(renderer, &sharedData,font);
 
         SDL_LockMutex(mutex);
         drawVehicles(renderer,font,&queueData);
@@ -559,25 +587,20 @@ void displayText(SDL_Renderer *renderer, TTF_Font *font, char *text, int x, int 
     // SDL_Log("TTF_Error: %s\n", TTF_GetError());
 }
 
-void refreshLight(SDL_Renderer *renderer, SharedData *sharedData)
+void refreshLight(SDL_Renderer *renderer, SharedData *sharedData, TTF_Font *font)
 {
-    if (sharedData->nextLight == sharedData->currentLight)
-        return; // early return
+    //clear screen
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
 
-    if (sharedData->nextLight == 0)
-    { // trun off all lights
-        drawLightForB(renderer, false);
-    }
-    if (sharedData->nextLight == 2)
-        drawLightForB(renderer, true);
-    else
-        drawLightForB(renderer, false);
-    SDL_RenderPresent(renderer);
-    printf("Light of queue updated from %d to %d\n", sharedData->currentLight, sharedData->nextLight);
-    // update the light
-    sharedData->currentLight = sharedData->nextLight;
-    fflush(stdout);
+    //draw roads and lanes
+    drawRoadsAndLane(renderer, font);
+
+    //draw traffic lights (activeLane is nextLight - 1, or -1 if all red)
+    int activeLane = sharedData->nextLight - 1;
+    drawAllTrafficLights(renderer, activeLane);
 }
+
 
 void *checkQueue(void *arg)
 {
@@ -689,7 +712,7 @@ void *readAndParseFile(void *arg)
         FILE *file = fopen(VEHICLE_FILE, "r");
         if (!file)
         {
-            SDl_Log("waiting for vehicle file...");
+            SDL_Log("waiting for vehicle file...");
             sleep(2);
             continue;
         }
