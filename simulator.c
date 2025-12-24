@@ -19,7 +19,7 @@
 //checkQueue constants
 #define PRIORITY_THRESHOLD_HIGH 10
 #define PRIORITY_THRESHOLD_LOW 5
-#define TIME_PER_VEHICLE 1  // seconds per vehicle
+#define TIME_PER_VEHICLE 2  // seconds per vehicle
 
 //vehicle box dimensions
 #define VEHICLE_WIDTH 20
@@ -49,8 +49,12 @@ typedef struct
 // Node for queue
 typedef struct VehicleNode
 {
-    char vehicleNumber[10];   // unique id for the vehicle
-    char road;                // road the vehicle is in
+    char vehicleNumber[10];// unique id for the vehicle
+    char road;//road the vehicle is in 
+    float x,y;
+    float targetX,targetY;
+    bool isMoving;
+    bool hasCrossed;
     struct VehicleNode *next; // pointer to point at next vehiclenode in queue
 } VehicleNode;
 
@@ -71,6 +75,7 @@ typedef struct QueueData
     int currentLane;  // 0 1 2 3 for A B C D
     int priorityMode; // 0 for normal and 1 fr priority
     SDL_mutex *mutex;
+    int activeLane;//which lane has green light
 } QueueData;
 
 // Function declarations
@@ -160,6 +165,18 @@ void enqueue(Queue *queue,const char *vehicleNumber,char road)
     newNode->vehicleNumber[sizeof(newNode->vehicleNumber)-1] = '\0';
     newNode->road = road;
     newNode->next = NULL;
+    newNode->isMoving = true;
+    newNode->hasCrossed = false;
+
+    //set initial position (off-screen based on road)
+    newNode->x = getInitialX(road);
+    newNode->y = getInitialY(road);
+
+    //set target position (stop line based on queue position)
+    int queuePos = queue->size;
+    newNode->targetX = getStopPositionX(road, queuePos);
+    newNode->targetY = getStopPositionY(road, queuePos);
+
 
     if (queue->rear == NULL){
         queue->front = newNode;
@@ -213,6 +230,34 @@ void printMessageHelper(const char *message, int count)
 {
     for (int i = 0; i < count; i++)
         printf("%s\n", message);
+}
+
+float moveTowards(float current, float target, float maxDelta)
+{
+    if (fabsf(target - current) <= maxDelta) {
+        return target;
+    }
+    return current + (target > current ? maxDelta : -maxDelta);
+}
+
+void updateQueueTargets(Queue *queue)
+{
+    // Update target positions for all vehicles in queue after dequeue
+    VehicleNode *current = queue->front;
+    int position = 0;
+    while (current != NULL) {
+        if (!current->hasCrossed) {
+            current->targetX = getStopPositionX(current->road, position);
+            current->targetY = getStopPositionY(current->road, position);
+            current->isMoving = true;
+        }
+        current = current->next;
+        position++;
+    }
+}
+
+void updateVehicles(QueueData *queueData, float deltaTime){
+    //Function to implement update the properties of vehicles for drawing
 }
 
 void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
