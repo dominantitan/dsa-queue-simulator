@@ -33,6 +33,17 @@
 #define STOP_LINE_C (WINDOW_WIDTH / 2 + ROAD_WIDTH / 2 + 5)
 #define STOP_LINE_D (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 - VEHICLE_WIDTH - 5)
 
+//Lane center positions (middle lane is from LANE_WIDTH to 2*LANE_WIDTH)
+//Incoming half: first half of middle lane
+//Outgoing half: second half of middle lane
+#define LANE_A_INCOMING_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + 5)  //left half of middle lane
+#define LANE_A_OUTGOING_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + LANE_WIDTH/2 + 5)  //right half of middle lane
+#define LANE_B_INCOMING_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + LANE_WIDTH/2 + 5)  //right half of middle lane
+#define LANE_B_OUTGOING_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + 5)  //left half of middle lane
+#define LANE_C_INCOMING_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + 5)  //top half of middle lane
+#define LANE_C_OUTGOING_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + LANE_WIDTH/2 + 5)  //bottom half of middle lane
+#define LANE_D_INCOMING_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + LANE_WIDTH/2 + 5)  //bottom half of middle lane
+#define LANE_D_OUTGOING_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH + 5)  //top half of middle lane
 
 const char *VEHICLE_FILE = "vehicles.data";
 
@@ -111,10 +122,10 @@ void initQueue(Queue *queue){
 float getInitialX(char road)
 {
     switch (road) {
-        case 'A': return WINDOW_WIDTH / 2 - LANE_WIDTH / 2 + 15;  // Coming from top
-        case 'B': return WINDOW_WIDTH / 2 + 15;                    // Coming from bottom
-        case 'C': return WINDOW_WIDTH + VEHICLE_WIDTH;             // Coming from right (off-screen)
-        case 'D': return -VEHICLE_WIDTH;                           // Coming from left (off-screen)
+        case 'A': return LANE_A_INCOMING_X;  //incoming half of middle lane
+        case 'B': return LANE_B_INCOMING_X;  //incoming half of middle lane
+        case 'C': return WINDOW_WIDTH + VEHICLE_WIDTH;  //off-screen right
+        case 'D': return -VEHICLE_WIDTH;  //off-screen left
         default: return 0;
     }
 }
@@ -122,10 +133,10 @@ float getInitialX(char road)
 float getInitialY(char road)
 {
     switch (road) {
-        case 'A': return -VEHICLE_HEIGHT;                          // Coming from top (off-screen)
-        case 'B': return WINDOW_HEIGHT + VEHICLE_HEIGHT;           // Coming from bottom (off-screen)
-        case 'C': return WINDOW_HEIGHT / 2 - LANE_WIDTH / 2 + 15;  // Coming from right
-        case 'D': return WINDOW_HEIGHT / 2 + 15;                   // Coming from left
+        case 'A': return -VEHICLE_HEIGHT;  //off-screen top
+        case 'B': return WINDOW_HEIGHT + VEHICLE_HEIGHT;  //off-screen bottom
+        case 'C': return LANE_C_INCOMING_Y;  //incoming half of middle lane
+        case 'D': return LANE_D_INCOMING_Y;  //incoming half of middle lane
         default: return 0;
     }
 }
@@ -133,8 +144,8 @@ float getInitialY(char road)
 float getStopPositionX(char road, int queuePosition)
 {
     switch (road) {
-        case 'A': return WINDOW_WIDTH / 2 - LANE_WIDTH / 2 + 15;
-        case 'B': return WINDOW_WIDTH / 2 + 15;
+        case 'A': return LANE_A_INCOMING_X;
+        case 'B': return LANE_B_INCOMING_X;
         case 'C': return STOP_LINE_C + queuePosition * (VEHICLE_WIDTH + VEHICLE_GAP);
         case 'D': return STOP_LINE_D - queuePosition * (VEHICLE_WIDTH + VEHICLE_GAP);
         default: return 0;
@@ -146,8 +157,8 @@ float getStopPositionY(char road, int queuePosition)
     switch (road) {
         case 'A': return STOP_LINE_A - queuePosition * (VEHICLE_HEIGHT + VEHICLE_GAP);
         case 'B': return STOP_LINE_B + queuePosition * (VEHICLE_HEIGHT + VEHICLE_GAP);
-        case 'C': return WINDOW_HEIGHT / 2 - LANE_WIDTH / 2 + 15;
-        case 'D': return WINDOW_HEIGHT / 2 + 15;
+        case 'C': return LANE_C_INCOMING_Y;
+        case 'D': return LANE_D_INCOMING_Y;
         default: return 0;
     }
 }
@@ -320,23 +331,27 @@ void updateVehicles(QueueData *queueData, float deltaTime){
                     current->hasCrossed = true;
                     current->isMoving = true;
                     
-                    //Set exit target (opposite side of screen)
+                    //Set exit target (outgoing half of lane, then off-screen)
                     switch (current->road) {
                         case 'A':
-                            current->targetX = current->x;
+                            //Move to outgoing half then exit bottom
+                            current->targetX = LANE_A_OUTGOING_X;
                             current->targetY = WINDOW_HEIGHT + VEHICLE_HEIGHT + 50;
                             break;
                         case 'B':
-                            current->targetX = current->x;
+                            //Move to outgoing half then exit top
+                            current->targetX = LANE_B_OUTGOING_X;
                             current->targetY = -VEHICLE_HEIGHT - 50;
                             break;
                         case 'C':
+                            //Move to outgoing half then exit left
                             current->targetX = -VEHICLE_WIDTH - 50;
-                            current->targetY = current->y;
+                            current->targetY = LANE_C_OUTGOING_Y;
                             break;
                         case 'D':
+                            //Move to outgoing half then exit right
                             current->targetX = WINDOW_WIDTH + VEHICLE_WIDTH + 50;
-                            current->targetY = current->y;
+                            current->targetY = LANE_D_OUTGOING_Y;
                             break;
                     }
                     SDL_Log("Vehicle %s crossing intersection from road %c", current->vehicleNumber, current->road);
