@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
 
 #define MAX_LINE_LENGTH 20
 #define MAIN_FONT "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -25,7 +26,10 @@
 #define VEHICLE_WIDTH 20
 #define VEHICLE_HEIGHT 20
 #define VEHICLE_SPEED 100.0f  //pixels per second
-#define VEHICLE_GAP 10        //gap between vehicles
+#define VEHICLE_GAP 15        //gap between vehicles
+
+//Turn probability (0-100, where 50 means 50% chance to turn right)
+#define TURN_RIGHT_PROBABILITY 50
 
 //position where vehicles wait (stop lines)
 #define STOP_LINE_A (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 - VEHICLE_HEIGHT - 5)
@@ -49,6 +53,20 @@
 //Lane D uses bottom side of middle lane
 #define LANE_D_Y (HORIZONTAL_LANE_CENTER_Y + LANE_WIDTH / 4 - VEHICLE_HEIGHT / 2)
 
+//Outgoing lane positions (for vehicles exiting after turning)
+//Lane A outgoing (vehicles from C turning right exit here - going up)
+#define LANE_A_OUT_X (VERTICAL_LANE_CENTER_X + LANE_WIDTH / 4 - VEHICLE_WIDTH / 2)
+//Lane B outgoing (vehicles from D turning right exit here - going down)
+#define LANE_B_OUT_X (VERTICAL_LANE_CENTER_X - LANE_WIDTH / 4 - VEHICLE_WIDTH / 2)
+//Lane C outgoing (vehicles from B turning right exit here - going right)
+#define LANE_C_OUT_Y (HORIZONTAL_LANE_CENTER_Y + LANE_WIDTH / 4 - VEHICLE_HEIGHT / 2)
+//Lane D outgoing (vehicles from A turning right exit here - going left)
+#define LANE_D_OUT_Y (HORIZONTAL_LANE_CENTER_Y - LANE_WIDTH / 4 - VEHICLE_HEIGHT / 2)
+
+//Intersection center for turning
+#define INTERSECTION_CENTER_X (WINDOW_WIDTH / 2)
+#define INTERSECTION_CENTER_Y (WINDOW_HEIGHT / 2)
+
 const char *VEHICLE_FILE = "vehicles.data";
 
 typedef struct QueueData QueueData;
@@ -61,16 +79,25 @@ typedef struct
     SDL_mutex *mutex;
 } SharedData;
 
+//Turn direction enum
+typedef enum {
+    TURN_STRAIGHT = 0,
+    TURN_RIGHT = 1
+} TurnDirection;
+
 // Node for queue
 typedef struct VehicleNode
 {
-    char vehicleNumber[10];// unique id for the vehicle
-    char road;//road the vehicle is in 
-    float x,y;
-    float targetX,targetY;
+    char vehicleNumber[10];
+    char road;
+    float x, y;
+    float targetX, targetY;
     bool isMoving;
     bool hasCrossed;
-    struct VehicleNode *next; // pointer to point at next vehiclenode in queue
+    bool isTurning;           //true if vehicle is currently in turning phase
+    bool hasCompletedTurn;    //true if turn is complete, now going straight
+    TurnDirection turnDirection;
+    struct VehicleNode *next;
 } VehicleNode;
 
 // Queue
@@ -120,7 +147,111 @@ bool isAnyVehicleCrossingIntersection(QueueData *queueData);
 VehicleNode *findLastNonCrossedVehicle(Queue *queue);
 int getWaitingVehicleCount(Queue *queue);
 bool isVehicleInIntersection(VehicleNode *vehicle);
+void setVehicleExitTarget(VehicleNode *vehicle);
+void setVehicleTurnTarget(VehicleNode *vehicle);
+TurnDirection getRandomTurnDirection(void);
+char getRightTurnDestination(char road);
 
+
+//Get random turn direction
+TurnDirection getRandomTurnDirection(void)
+{
+    int random = rand() % 100;
+    if (random < TURN_RIGHT_PROBABILITY) {
+        return TURN_RIGHT;
+    }
+    return TURN_STRAIGHT;
+}
+
+//Get destination road for right turn
+char getRightTurnDestination(char road)
+{
+    switch (road) {
+        case 'A': return 'D';  // A turns right to D (going left)
+        case 'B': return 'C';  // B turns right to C (going right)
+        case 'C': return 'A';  // C turns right to A (going up)
+        case 'D': return 'B';  // D turns right to B (going down)
+        default: return road;
+    }
+}
+
+//Set target for vehicle going straight through intersection
+void setVehicleStraightTarget(VehicleNode *vehicle)
+{
+    switch (vehicle->road) {
+        case 'A':
+            vehicle->targetX = vehicle->x;
+            vehicle->targetY = WINDOW_HEIGHT + VEHICLE_HEIGHT + 50;
+            break;
+        case 'B':
+            vehicle->targetX = vehicle->x;
+            vehicle->targetY = -VEHICLE_HEIGHT - 50;
+            break;
+        case 'C':
+            vehicle->targetX = -VEHICLE_WIDTH - 50;
+            vehicle->targetY = vehicle->y;
+            break;
+        case 'D':
+            vehicle->targetX = WINDOW_WIDTH + VEHICLE_WIDTH + 50;
+            vehicle->targetY = vehicle->y;
+            break;
+    }
+}
+
+//Set intermediate target for turning (intersection center area)
+void setVehicleTurnTarget(VehicleNode *vehicle)
+{
+    //First move to intersection center area for turning
+    switch (vehicle->road) {
+        case 'A':
+            //A turning right: move down to center, then turn left
+            vehicle->targetX = LANE_D_OUT_Y + VEHICLE_WIDTH;  //adjust X for the turn
+            vehicle->targetY = INTERSECTION_CENTER_Y;
+            break;
+        case 'B':
+            //B turning right: move up to center, then turn right
+            vehicle->targetX = LANE_C_OUT_Y + VEHICLE_WIDTH;
+            vehicle->targetY = INTERSECTION_CENTER_Y;
+            break;
+        case 'C':
+            //C turning right: move left to center, then turn up
+            vehicle->targetX = INTERSECTION_CENTER_X;
+            vehicle->targetY = LANE_A_OUT_X - VEHICLE_HEIGHT;
+            break;
+        case 'D':
+            //D turning right: move right to center, then turn down
+            vehicle->targetX = INTERSECTION_CENTER_X;
+            vehicle->targetY = LANE_B_OUT_X + VEHICLE_HEIGHT;
+            break;
+    }
+}
+
+//Set final exit target after completing turn
+void setVehicleTurnExitTarget(VehicleNode *vehicle)
+{
+    switch (vehicle->road) {
+        case 'A':
+            //A turned right, now going left (exit on D's outgoing lane)
+            vehicle->targetX = -VEHICLE_WIDTH - 50;
+            vehicle->targetY = LANE_D_OUT_Y;
+            break;
+        case 'B':
+            //B turned right, now going right (exit on C's outgoing lane)
+            vehicle->targetX = WINDOW_WIDTH + VEHICLE_WIDTH + 50;
+            vehicle->targetY = LANE_C_OUT_Y;
+            break;
+        case 'C':
+            //C turned right, now going up (exit on A's outgoing lane)
+            vehicle->targetX = LANE_A_OUT_X;
+            vehicle->targetY = -VEHICLE_HEIGHT - 50;
+            break;
+        case 'D':
+            //D turned right, now going down (exit on B's outgoing lane)
+            vehicle->targetX = LANE_B_OUT_X;
+            vehicle->targetY = WINDOW_HEIGHT + VEHICLE_HEIGHT + 50;
+            break;
+    }
+}
 
 //Find the last vehicle that hasn't crossed yet
 VehicleNode *findLastNonCrossedVehicle(Queue *queue)
@@ -273,12 +404,17 @@ void enqueue(Queue *queue,const char *vehicleNumber,char road)
         return;
     }
 
-    strncpy(newNode->vehicleNumber,vehicleNumber,sizeof(newNode->vehicleNumber)-1);
+    strncpy(newNode->vehicleNumber, vehicleNumber, sizeof(newNode->vehicleNumber)-1);
     newNode->vehicleNumber[sizeof(newNode->vehicleNumber)-1] = '\0';
     newNode->road = road;
     newNode->next = NULL;
     newNode->isMoving = true;
     newNode->hasCrossed = false;
+    newNode->isTurning = false;
+    newNode->hasCompletedTurn = false;
+    
+    //Randomly decide turn direction when vehicle is created
+    newNode->turnDirection = getRandomTurnDirection();
 
     //count non-crossed vehicles for queue position
     int queuePos = 0;
@@ -306,8 +442,10 @@ void enqueue(Queue *queue,const char *vehicleNumber,char road)
         queue->rear = newNode;
     }
     queue->size++;
-    SDL_Log("enqueue vehicle %s to road %c at (%.0f,%.0f) -> (%.0f,%.0f) queuePos=%d", 
-            vehicleNumber, road, newNode->x, newNode->y, newNode->targetX, newNode->targetY, queuePos);
+    
+    const char *turnStr = (newNode->turnDirection == TURN_RIGHT) ? "RIGHT" : "STRAIGHT";
+    SDL_Log("enqueue vehicle %s to road %c [%s] at (%.0f,%.0f) -> (%.0f,%.0f) queuePos=%d", 
+            vehicleNumber, road, turnStr, newNode->x, newNode->y, newNode->targetX, newNode->targetY, queuePos);
 }
 
 VehicleNode *dequeue(Queue *queue){
@@ -333,7 +471,7 @@ int getQueueSize(Queue *queue){
 void freeQueue(Queue *queue){
     VehicleNode *current = queue->front;
     while(current != NULL){
-        VehicleNode *temp =current;
+        VehicleNode *temp = current;
         current = current->next;
         free(temp);
     }
@@ -352,7 +490,6 @@ float moveTowards(float current, float target, float maxDelta)
 
 void updateQueueTargets(Queue *queue)
 {
-    //Update target positions for all vehicles in queue after one crosses
     VehicleNode *current = queue->front;
     int position = 0;
     while (current != NULL) {
@@ -389,19 +526,15 @@ bool canMoveForward(VehicleNode *current, VehicleNode *ahead, char road)
     float distance = 0;
     switch (road) {
         case 'A':
-            //current is above ahead (smaller Y), ahead is closer to intersection (larger Y)
             distance = ahead->y - current->y - VEHICLE_HEIGHT;
             break;
         case 'B':
-            //current is below ahead (larger Y), ahead is closer to intersection (smaller Y)
             distance = current->y - ahead->y - VEHICLE_HEIGHT;
             break;
         case 'C':
-            //current is right of ahead (larger X), ahead is closer to intersection (smaller X)
             distance = current->x - ahead->x - VEHICLE_WIDTH;
             break;
         case 'D':
-            //current is left of ahead (smaller X), ahead is closer to intersection (larger X)
             distance = ahead->x - current->x - VEHICLE_WIDTH;
             break;
     }
@@ -425,9 +558,26 @@ bool isVehicleInIntersection(VehicleNode *vehicle)
     return false;
 }
 
+//Check if vehicle has reached turning point (center of intersection)
+bool hasReachedTurningPoint(VehicleNode *vehicle)
+{
+    float tolerance = 5.0f;
+    switch (vehicle->road) {
+        case 'A':
+            return (vehicle->y >= INTERSECTION_CENTER_Y - tolerance);
+        case 'B':
+            return (vehicle->y <= INTERSECTION_CENTER_Y + tolerance);
+        case 'C':
+            return (vehicle->x <= INTERSECTION_CENTER_X + tolerance);
+        case 'D':
+            return (vehicle->x >= INTERSECTION_CENTER_X - tolerance);
+    }
+    return false;
+}
+
 void updateVehicles(QueueData *queueData, float deltaTime){
     float movement = VEHICLE_SPEED * deltaTime;
-    Queue *queues[] = {queueData->queueA,queueData->queueB, queueData->queueC,queueData->queueD};
+    Queue *queues[] = {queueData->queueA, queueData->queueB, queueData->queueC, queueData->queueD};
     int laneIndex[] = {0, 1, 2, 3};
 
     for (int q = 0; q < 4; q++) {
@@ -435,37 +585,57 @@ void updateVehicles(QueueData *queueData, float deltaTime){
         VehicleNode *current = queue->front;
         VehicleNode *prev = NULL;
         
-        //check if this lane has green light
         bool isGreenLight = (queueData->activeLane == laneIndex[q]);
 
         while (current != NULL) {
             VehicleNode *next = current->next;
 
             if (current->hasCrossed) {
-                //Vehicle is crossing - move straight through intersection
+                //Vehicle is crossing/turning through intersection
+                
+                //Check if turning and reached turning point
+                if (current->turnDirection == TURN_RIGHT && current->isTurning && !current->hasCompletedTurn) {
+                    if (hasReachedTurningPoint(current)) {
+                        //Reached turning point, set final exit target
+                        current->hasCompletedTurn = true;
+                        current->isTurning = false;
+                        setVehicleTurnExitTarget(current);
+                        SDL_Log("Vehicle %s completed turn, heading to exit", current->vehicleNumber);
+                    }
+                }
+                
+                //Move towards target
                 current->x = moveTowards(current->x, current->targetX, movement);
                 current->y = moveTowards(current->y, current->targetY, movement);
 
                 //Check if vehicle is off screen
                 bool offScreen = false;
-                switch (current->road) {
-                    case 'A': offScreen = (current->y > WINDOW_HEIGHT + VEHICLE_HEIGHT + 10); break;
-                    case 'B': offScreen = (current->y < -VEHICLE_HEIGHT - 10); break;
-                    case 'C': offScreen = (current->x < -VEHICLE_WIDTH - 10); break;
-                    case 'D': offScreen = (current->x > WINDOW_WIDTH + VEHICLE_WIDTH + 10); break;
+                if (current->turnDirection == TURN_RIGHT && current->hasCompletedTurn) {
+                    //Check exit based on turn destination
+                    switch (current->road) {
+                        case 'A': offScreen = (current->x < -VEHICLE_WIDTH - 10); break;  //exits left
+                        case 'B': offScreen = (current->x > WINDOW_WIDTH + VEHICLE_WIDTH + 10); break;  //exits right
+                        case 'C': offScreen = (current->y < -VEHICLE_HEIGHT - 10); break;  //exits top
+                        case 'D': offScreen = (current->y > WINDOW_HEIGHT + VEHICLE_HEIGHT + 10); break;  //exits bottom
+                    }
+                } else {
+                    //Going straight
+                    switch (current->road) {
+                        case 'A': offScreen = (current->y > WINDOW_HEIGHT + VEHICLE_HEIGHT + 10); break;
+                        case 'B': offScreen = (current->y < -VEHICLE_HEIGHT - 10); break;
+                        case 'C': offScreen = (current->x < -VEHICLE_WIDTH - 10); break;
+                        case 'D': offScreen = (current->x > WINDOW_WIDTH + VEHICLE_WIDTH + 10); break;
+                    }
                 }
 
                 if (offScreen) {
-                    //Remove vehicle from queue using dequeue if at front
                     if (prev == NULL) {
-                        //Vehicle is at front - use dequeue operation
                         VehicleNode *removed = dequeue(queue);
                         if (removed) {
                             SDL_Log("Vehicle %s exited screen from road %c", removed->vehicleNumber, removed->road);
                             free(removed);
                         }
                     } else {
-                        //Vehicle is not at front - remove inline
                         prev->next = next;
                         if (queue->rear == current) {
                             queue->rear = prev;
@@ -481,39 +651,29 @@ void updateVehicles(QueueData *queueData, float deltaTime){
                 //Green light - move vehicle towards intersection
                 VehicleNode *ahead = findVehicleAhead(queue, current);
                 
-                //Check if vehicle has entered the intersection
                 if (isVehicleInIntersection(current)) {
-                    //Vehicle entered intersection - mark as crossed and set exit target
+                    //Vehicle entered intersection
                     current->hasCrossed = true;
                     current->isMoving = true;
                     
-                    //Set exit target - go straight through to opposite side
-                    switch (current->road) {
-                        case 'A':
-                            current->targetX = current->x;
-                            current->targetY = WINDOW_HEIGHT + VEHICLE_HEIGHT + 50;
-                            break;
-                        case 'B':
-                            current->targetX = current->x;
-                            current->targetY = -VEHICLE_HEIGHT - 50;
-                            break;
-                        case 'C':
-                            current->targetX = -VEHICLE_WIDTH - 50;
-                            current->targetY = current->y;
-                            break;
-                        case 'D':
-                            current->targetX = WINDOW_WIDTH + VEHICLE_WIDTH + 50;
-                            current->targetY = current->y;
-                            break;
+                    if (current->turnDirection == TURN_RIGHT) {
+                        //Start turning
+                        current->isTurning = true;
+                        setVehicleTurnTarget(current);
+                        SDL_Log("Vehicle %s entered intersection from road %c - TURNING RIGHT", 
+                                current->vehicleNumber, current->road);
+                    } else {
+                        //Go straight
+                        setVehicleStraightTarget(current);
+                        SDL_Log("Vehicle %s entered intersection from road %c - GOING STRAIGHT", 
+                                current->vehicleNumber, current->road);
                     }
-                    SDL_Log("Vehicle %s entered intersection from road %c", current->vehicleNumber, current->road);
                     
-                    //Update targets for remaining vehicles
                     updateQueueTargets(queue);
                 } else {
-                    //Vehicle not yet in intersection - move towards it with collision check
+                    //Vehicle not yet in intersection - move towards it
                     if (canMoveForward(current, ahead, current->road)) {
-                        //Set target to intersection entry point
+                        //Temporarily set target to move through
                         switch (current->road) {
                             case 'A':
                                 current->targetX = current->x;
@@ -539,7 +699,6 @@ void updateVehicles(QueueData *queueData, float deltaTime){
                 }
             } else if (!current->hasCrossed) {
                 //Red light and vehicle hasn't crossed yet
-                //Reset target to stop position if not already there
                 int position = 0;
                 VehicleNode *temp = queue->front;
                 while (temp != NULL && temp != current) {
@@ -551,7 +710,6 @@ void updateVehicles(QueueData *queueData, float deltaTime){
                 current->targetX = getStopPositionX(current->road, position);
                 current->targetY = getStopPositionY(current->road, position);
                 
-                //Move towards stop line with collision detection
                 VehicleNode *ahead = findVehicleAhead(queue, current);
                 
                 if (canMoveForward(current, ahead, current->road)) {
@@ -559,7 +717,6 @@ void updateVehicles(QueueData *queueData, float deltaTime){
                     current->y = moveTowards(current->y, current->targetY, movement);
                 }
 
-                //Check if reached target
                 if (fabsf(current->x - current->targetX) < 0.5f && 
                     fabsf(current->y - current->targetY) < 0.5f) {
                     current->isMoving = false;
@@ -588,8 +745,17 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
         VehicleNode *current = queues[q]->front;
         
         while (current != NULL) {
-            //Set color based on road
-            SDL_SetRenderDrawColor(renderer, colors[q].r, colors[q].g, colors[q].b, colors[q].a);
+            //Set color based on road (darker if turning)
+            if (current->turnDirection == TURN_RIGHT) {
+                //Darker color for turning vehicles
+                SDL_SetRenderDrawColor(renderer, 
+                    colors[q].r * 0.7, 
+                    colors[q].g * 0.7, 
+                    colors[q].b * 0.7, 
+                    colors[q].a);
+            } else {
+                SDL_SetRenderDrawColor(renderer, colors[q].r, colors[q].g, colors[q].b, colors[q].a);
+            }
             
             SDL_Rect vehicleRect = {
                 (int)current->x,
@@ -599,9 +765,15 @@ void drawVehicles(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueData)
             };
             
             SDL_RenderFillRect(renderer, &vehicleRect);
-            //Draw border
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            
+            //Draw border (orange for turning, white for straight)
+            if (current->turnDirection == TURN_RIGHT) {
+                SDL_SetRenderDrawColor(renderer, 255, 165, 0, 255);  //Orange border for turning
+            } else {
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);  //White border for straight
+            }
             SDL_RenderDrawRect(renderer, &vehicleRect);
+            
             current = current->next;
         }
     }
@@ -611,7 +783,6 @@ void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueDat
 {
     char statusText[100];
     
-    //draw status box
     SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
     SDL_Rect statusBox = {10, 10, 200, 120};
     SDL_RenderFillRect(renderer, &statusBox);
@@ -619,7 +790,6 @@ void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueDat
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderDrawRect(renderer, &statusBox);
 
-    //display queue sizes
     snprintf(statusText, sizeof(statusText), "A: %d vehicles", getQueueSize(queueData->queueA));
     displayText(renderer, font, statusText, 20, 20);
     
@@ -632,7 +802,6 @@ void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueDat
     snprintf(statusText, sizeof(statusText), "D: %d vehicles", getQueueSize(queueData->queueD));
     displayText(renderer, font, statusText, 20, 95);
 
-    //display mode
     if (queueData->priorityMode) {
         SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
         SDL_Rect modeBox = {WINDOW_WIDTH - 210, 10, 210, 30};
@@ -648,6 +817,9 @@ void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueDat
 
 int main()
 {
+    //Initialize random seed
+    srand(time(NULL));
+    
     pthread_t tQueue, tReadFile;
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
@@ -659,7 +831,6 @@ int main()
     }
     SDL_mutex *mutex = SDL_CreateMutex();
 
-    //initializing queue dat 
     QueueData queueData;
     queueData.queueA = (Queue *)malloc(sizeof(Queue));
     queueData.queueB = (Queue *)malloc(sizeof(Queue));
@@ -671,28 +842,25 @@ int main()
     initQueue(queueData.queueC);
     initQueue(queueData.queueD);
 
-    queueData.currentLane = 0;// start with lane A
-    queueData.priorityMode = 0;// normal mode
+    queueData.currentLane = 0;
+    queueData.priorityMode = 0;
     queueData.activeLane = -1;
     queueData.mutex = mutex;
 
     SharedData sharedData = {0, 0, &queueData, mutex};
-    // 0 => all red
 
     TTF_Font *font = TTF_OpenFont(MAIN_FONT, 24);
     if (!font){
         SDL_Log("Failed to load font: %s", TTF_GetError());
     }
     
-    pthread_create(&tQueue,NULL,checkQueue,&sharedData);
-    pthread_create(&tReadFile,NULL,readAndParseFile,&queueData);
+    pthread_create(&tQueue, NULL, checkQueue, &sharedData);
+    pthread_create(&tReadFile, NULL, readAndParseFile, &queueData);
 
-    //Delta time variables
     Uint32 lastTime = SDL_GetTicks();
     Uint32 currentTime;
     float deltaTime;
 
-    // Continue the UI thread
     bool running = true;
     while (running)
     {
@@ -706,7 +874,7 @@ int main()
         }
         
         SDL_LockMutex(mutex);
-        updateVehicles(&queueData,deltaTime);
+        updateVehicles(&queueData, deltaTime);
         refreshLight(renderer, &sharedData, font);
         drawVehicles(renderer, font, &queueData);
         drawQueueStatus(renderer, font, &queueData);
@@ -716,7 +884,6 @@ int main()
         SDL_Delay(16);
     }
 
-    //memory management
     SDL_DestroyMutex(mutex);
     freeQueue(queueData.queueA);
     freeQueue(queueData.queueB);
@@ -891,26 +1058,50 @@ bool isAnyVehicleCrossingIntersection(QueueData *queueData)
         VehicleNode *current = queues[q]->front;
         while (current != NULL) {
             if (current->hasCrossed) {
-                //check if vehicle is still in the intersection area
                 bool inIntersection = false;
-                switch (current->road) {
-                    case 'A':
-                        inIntersection = (current->y >= WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 - VEHICLE_HEIGHT &&
-                                         current->y <= WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2);
-                        break;
-                    case 'B':
-                        inIntersection = (current->y >= WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 &&
-                                         current->y <= WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2 + VEHICLE_HEIGHT);
-                        break;
-                    case 'C':
-                        inIntersection = (current->x >= WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 &&
-                                         current->x <= WINDOW_WIDTH / 2 + ROAD_WIDTH / 2 + VEHICLE_WIDTH);
-                        break;
-                    case 'D':
-                        inIntersection = (current->x >= WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 - VEHICLE_WIDTH &&
-                                         current->x <= WINDOW_WIDTH / 2 + ROAD_WIDTH / 2);
-                        break;
+                
+                //Check based on turn direction
+                if (current->turnDirection == TURN_RIGHT && !current->hasCompletedTurn) {
+                    //Still turning - definitely in intersection
+                    inIntersection = true;
+                } else if (current->turnDirection == TURN_RIGHT && current->hasCompletedTurn) {
+                    //Completed turn - check based on exit direction
+                    switch (current->road) {
+                        case 'A':  //exiting left
+                            inIntersection = (current->x >= WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 - VEHICLE_WIDTH);
+                            break;
+                        case 'B':  //exiting right
+                            inIntersection = (current->x <= WINDOW_WIDTH / 2 + ROAD_WIDTH / 2);
+                            break;
+                        case 'C':  //exiting up
+                            inIntersection = (current->y >= WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 - VEHICLE_HEIGHT);
+                            break;
+                        case 'D':  //exiting down
+                            inIntersection = (current->y <= WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2);
+                            break;
+                    }
+                } else {
+                    //Going straight
+                    switch (current->road) {
+                        case 'A':
+                            inIntersection = (current->y >= WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 - VEHICLE_HEIGHT &&
+                                             current->y <= WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2);
+                            break;
+                        case 'B':
+                            inIntersection = (current->y >= WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 &&
+                                             current->y <= WINDOW_HEIGHT / 2 + ROAD_WIDTH / 2 + VEHICLE_HEIGHT);
+                            break;
+                        case 'C':
+                            inIntersection = (current->x >= WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 &&
+                                             current->x <= WINDOW_WIDTH / 2 + ROAD_WIDTH / 2 + VEHICLE_WIDTH);
+                            break;
+                        case 'D':
+                            inIntersection = (current->x >= WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 - VEHICLE_WIDTH &&
+                                             current->x <= WINDOW_WIDTH / 2 + ROAD_WIDTH / 2);
+                            break;
+                    }
                 }
+                
                 if (inIntersection) {
                     return true;
                 }
@@ -927,7 +1118,6 @@ void *checkQueue(void *arg)
     QueueData *queueData = sharedData->queueData;
     while (1)
     {
-        //First, wait for intersection to be clear before proceeding
         while (1) {
             SDL_LockMutex(queueData->mutex);
             bool intersectionBusy = isAnyVehicleCrossingIntersection(queueData);
@@ -936,18 +1126,16 @@ void *checkQueue(void *arg)
             if (!intersectionBusy) {
                 break;
             }
-            SDL_Delay(50);  //check frequently
+            SDL_Delay(50);
         }
         
         SDL_LockMutex(queueData->mutex);
 
-        //Use waiting count instead of total queue size
         int sizeA = getWaitingVehicleCount(queueData->queueA);
         int sizeB = getWaitingVehicleCount(queueData->queueB);
         int sizeC = getWaitingVehicleCount(queueData->queueC);
         int sizeD = getWaitingVehicleCount(queueData->queueD);
 
-        //check priority mode for lane A
         if (sizeA > PRIORITY_THRESHOLD_HIGH){
             queueData->priorityMode = 1;
             SDL_Log("Priority mode activated!! lane A has %d vehicles", sizeA);
@@ -960,22 +1148,17 @@ void *checkQueue(void *arg)
         int vehiclesToServe = 0;
 
         if(queueData->priorityMode == 1){
-            //Priority mode - serve lane A
             laneToServe = 0;
             vehiclesToServe = sizeA;
             SDL_Log("Priority mode: serving lane A with %d vehicles", vehiclesToServe);
         }else {
-            //Normal mode - calculate average of normal lanes (B, C, D)
-            //Formula: |V| = (1/n) * sum(|Li|) where n = 3 (lanes B, C, D)
             int totalNormalVehicles = sizeB + sizeC + sizeD;
-            int avgVehicles = (totalNormalVehicles + 2) / 3;  // ceiling division for 3 lanes
+            int avgVehicles = (totalNormalVehicles + 2) / 3;
             
-            if (avgVehicles < 1) avgVehicles = 1;  //minimum 1 vehicle
+            if (avgVehicles < 1) avgVehicles = 1;
             
-            //rotate through lanes
             laneToServe = queueData->currentLane;
             
-            //get current lane size
             int currentLaneSize = 0;
             switch (laneToServe) {
                 case 0: currentLaneSize = sizeA; break;
@@ -984,40 +1167,32 @@ void *checkQueue(void *arg)
                 case 3: currentLaneSize = sizeD; break;
             }
             
-            //serve minimum of average or current lane size
             vehiclesToServe = (currentLaneSize < avgVehicles) ? currentLaneSize : avgVehicles;
             if (vehiclesToServe < 1 && currentLaneSize > 0) vehiclesToServe = 1;
             
             SDL_Log("Normal mode: lane %d, size=%d, avg=%d, serving %d vehicles", 
                     laneToServe, currentLaneSize, avgVehicles, vehiclesToServe);
             
-            //move to next lane for next cycle
             queueData->currentLane = (queueData->currentLane + 1) % 4;
         }
 
         SDL_UnlockMutex(queueData->mutex);
 
-        //Check if there are vehicles to serve
         if (vehiclesToServe > 0) {
-            //GREEN phase - turn on green light immediately
             sharedData->nextLight = laneToServe + 1;
             queueData->activeLane = laneToServe;
             
-            //Calculate green light time: T = |V| * t
             int greenLightTime = vehiclesToServe * TIME_PER_VEHICLE * 1000;
             SDL_Log("Green light for lane %d for %d ms (%d vehicles * %d sec)", 
                     laneToServe, greenLightTime, vehiclesToServe, TIME_PER_VEHICLE);
             
-            //Wait for green light duration
             SDL_Delay(greenLightTime);
             
-            //Turn red - vehicles already crossing will continue
             sharedData->nextLight = 0;
             queueData->activeLane = -1;
             SDL_Log("Red light for lane %d - waiting for crossing vehicles to clear", laneToServe);
             
         } else {
-            //No vehicles to serve, short delay before checking next lane
             SDL_Log("No vehicles in lane %d, skipping", laneToServe);
             SDL_Delay(200);
         }
@@ -1034,7 +1209,7 @@ void *readAndParseFile(void *arg)
         FILE *file = fopen(VEHICLE_FILE, "r");
         if (!file)
         {
-            SDL_Log("waiting for vehicle file '%s'...",VEHICLE_FILE);
+            SDL_Log("waiting for vehicle file '%s'...", VEHICLE_FILE);
             sleep(2);
             continue;
         }
