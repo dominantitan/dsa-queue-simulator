@@ -67,6 +67,30 @@
 #define INTERSECTION_CENTER_X (WINDOW_WIDTH / 2)
 #define INTERSECTION_CENTER_Y (WINDOW_HEIGHT / 2)
 
+//Visual-only lane positions (L1 and L3 - no queue, just visual)
+//Lanes go CLOCKWISE: AL1,AL2,AL3,CL1,CL2,CL3,BL1,BL2,BL3,DL1,DL2,DL3
+
+//Road A (top, vehicles go DOWN): AL1=leftmost, AL2=middle, AL3=rightmost
+#define LANE_AL1_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH / 2 - VEHICLE_WIDTH / 2)  //leftmost
+#define LANE_AL3_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH * 2 + LANE_WIDTH / 2 - VEHICLE_WIDTH / 2)  //rightmost
+
+//Road C (right, vehicles go LEFT): CL1=topmost, CL2=middle, CL3=bottommost
+#define LANE_CL1_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH / 2 - VEHICLE_HEIGHT / 2)  //topmost
+#define LANE_CL3_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH * 2 + LANE_WIDTH / 2 - VEHICLE_HEIGHT / 2)  //bottommost
+
+//Road B (bottom, vehicles go UP): BL1=rightmost, BL2=middle, BL3=leftmost
+#define LANE_BL1_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH * 2 + LANE_WIDTH / 2 - VEHICLE_WIDTH / 2)  //rightmost
+#define LANE_BL3_X (WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + LANE_WIDTH / 2 - VEHICLE_WIDTH / 2)  //leftmost
+
+//Road D (left, vehicles go RIGHT): DL1=bottommost, DL2=middle, DL3=topmost
+#define LANE_DL1_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH * 2 + LANE_WIDTH / 2 - VEHICLE_HEIGHT / 2)  //bottommost
+#define LANE_DL3_Y (WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + LANE_WIDTH / 2 - VEHICLE_HEIGHT / 2)  //topmost
+
+//Visual vehicle spawn interval (in milliseconds)
+#define VISUAL_SPAWN_INTERVAL_MIN 1000
+#define VISUAL_SPAWN_INTERVAL_MAX 3000
+#define MAX_VISUAL_VEHICLES 50
+
 const char *VEHICLE_FILE = "vehicles.data";
 
 typedef struct QueueData QueueData;
@@ -84,6 +108,28 @@ typedef enum {
     TURN_STRAIGHT = 0,
     TURN_RIGHT = 1
 } TurnDirection;
+
+//Visual-only vehicle (for L1 and L3 lanes - no queue needed)
+typedef struct {
+    float x, y;
+    bool active;
+    bool hasCompletedTurn;  //true after turn complete, now moving to exit
+} VisualVehicle;
+
+//Global visual vehicle arrays
+VisualVehicle visualVehiclesAL3[MAX_VISUAL_VEHICLES];  //AL3 outgoing to CL1 (turns left)
+VisualVehicle visualVehiclesCL3[MAX_VISUAL_VEHICLES];  //CL3 outgoing to BL1 (turns left)
+VisualVehicle visualVehiclesBL3[MAX_VISUAL_VEHICLES];  //BL3 outgoing to DL1 (turns left)
+VisualVehicle visualVehiclesDL3[MAX_VISUAL_VEHICLES];  //DL3 outgoing to AL1 (turns left)
+
+Uint32 lastSpawnTimeAL3 = 0;
+Uint32 nextSpawnIntervalAL3 = 0;
+Uint32 lastSpawnTimeCL3 = 0;
+Uint32 nextSpawnIntervalCL3 = 0;
+Uint32 lastSpawnTimeBL3 = 0;
+Uint32 nextSpawnIntervalBL3 = 0;
+Uint32 lastSpawnTimeDL3 = 0;
+Uint32 nextSpawnIntervalDL3 = 0;
 
 // Node for queue
 typedef struct VehicleNode
@@ -149,8 +195,14 @@ int getWaitingVehicleCount(Queue *queue);
 bool isVehicleInIntersection(VehicleNode *vehicle);
 void setVehicleExitTarget(VehicleNode *vehicle);
 void setVehicleTurnTarget(VehicleNode *vehicle);
+void setVehicleStraightTarget(VehicleNode *vehicle);
 TurnDirection getRandomTurnDirection(void);
 char getRightTurnDestination(char road);
+
+//Visual vehicle functions
+void initVisualVehicles(void);
+void updateVisualVehicles(float deltaTime);
+void drawVisualVehicles(SDL_Renderer *renderer);
 
 
 //Get random turn direction
@@ -279,6 +331,272 @@ int getWaitingVehicleCount(Queue *queue)
         current = current->next;
     }
     return count;
+}
+
+//Initialize visual vehicle arrays
+void initVisualVehicles(void)
+{
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        visualVehiclesAL3[i].active = false;
+        visualVehiclesAL3[i].hasCompletedTurn = false;
+        
+        visualVehiclesCL3[i].active = false;
+        visualVehiclesCL3[i].hasCompletedTurn = false;
+        
+        visualVehiclesBL3[i].active = false;
+        visualVehiclesBL3[i].hasCompletedTurn = false;
+        
+        visualVehiclesDL3[i].active = false;
+        visualVehiclesDL3[i].hasCompletedTurn = false;
+    }
+    Uint32 startTime = SDL_GetTicks();
+    lastSpawnTimeAL3 = startTime;
+    lastSpawnTimeCL3 = startTime;
+    lastSpawnTimeBL3 = startTime;
+    lastSpawnTimeDL3 = startTime;
+    nextSpawnIntervalAL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+    nextSpawnIntervalCL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+    nextSpawnIntervalBL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+    nextSpawnIntervalDL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+}
+
+//Spawn visual vehicles - static helper functions
+static void spawnVisualVehicleAL3(void)
+{
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (!visualVehiclesAL3[i].active) {
+            visualVehiclesAL3[i].active = true;
+            visualVehiclesAL3[i].x = LANE_AL3_X;
+            visualVehiclesAL3[i].y = -VEHICLE_HEIGHT - VEHICLE_GAP;
+            visualVehiclesAL3[i].hasCompletedTurn = false;
+            break;
+        }
+    }
+}
+
+static void spawnVisualVehicleCL3(void)
+{
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (!visualVehiclesCL3[i].active) {
+            visualVehiclesCL3[i].active = true;
+            visualVehiclesCL3[i].x = WINDOW_WIDTH + VEHICLE_WIDTH + VEHICLE_GAP;
+            visualVehiclesCL3[i].y = LANE_CL3_Y;
+            visualVehiclesCL3[i].hasCompletedTurn = false;
+            break;
+        }
+    }
+}
+
+static void spawnVisualVehicleBL3(void)
+{
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (!visualVehiclesBL3[i].active) {
+            visualVehiclesBL3[i].active = true;
+            visualVehiclesBL3[i].x = LANE_BL3_X;
+            visualVehiclesBL3[i].y = WINDOW_HEIGHT + VEHICLE_HEIGHT + VEHICLE_GAP;
+            visualVehiclesBL3[i].hasCompletedTurn = false;
+            break;
+        }
+    }
+}
+
+static void spawnVisualVehicleDL3(void)
+{
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (!visualVehiclesDL3[i].active) {
+            visualVehiclesDL3[i].active = true;
+            visualVehiclesDL3[i].x = -VEHICLE_WIDTH - VEHICLE_GAP;
+            visualVehiclesDL3[i].y = LANE_DL3_Y;
+            visualVehiclesDL3[i].hasCompletedTurn = false;
+            break;
+        }
+    }
+}
+
+//Update visual vehicles movement
+void updateVisualVehicles(float deltaTime)
+{
+    Uint32 currentTime = SDL_GetTicks();
+    
+    //Spawn new vehicles at random intervals
+    if (currentTime - lastSpawnTimeAL3 >= nextSpawnIntervalAL3) {
+        spawnVisualVehicleAL3();
+        lastSpawnTimeAL3 = currentTime;
+        nextSpawnIntervalAL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+    }
+    if (currentTime - lastSpawnTimeCL3 >= nextSpawnIntervalCL3) {
+        spawnVisualVehicleCL3();
+        lastSpawnTimeCL3 = currentTime;
+        nextSpawnIntervalCL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+    }
+    if (currentTime - lastSpawnTimeBL3 >= nextSpawnIntervalBL3) {
+        spawnVisualVehicleBL3();
+        lastSpawnTimeBL3 = currentTime;
+        nextSpawnIntervalBL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+    }
+    if (currentTime - lastSpawnTimeDL3 >= nextSpawnIntervalDL3) {
+        spawnVisualVehicleDL3();
+        lastSpawnTimeDL3 = currentTime;
+        nextSpawnIntervalDL3 = VISUAL_SPAWN_INTERVAL_MIN + rand() % (VISUAL_SPAWN_INTERVAL_MAX - VISUAL_SPAWN_INTERVAL_MIN);
+    }
+    
+    float moveAmount = VEHICLE_SPEED * deltaTime;
+    
+    //Update AL3 vehicles (going down, then turn left to CL1 - exit right)
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesAL3[i].active) {
+            if (!visualVehiclesAL3[i].hasCompletedTurn) {
+                //Phase 1: Move down to turning point
+                visualVehiclesAL3[i].y += moveAmount;
+                if (visualVehiclesAL3[i].y >= LANE_CL1_Y) {
+                    visualVehiclesAL3[i].y = LANE_CL1_Y;
+                    visualVehiclesAL3[i].hasCompletedTurn = true;
+                }
+            } else {
+                //Phase 2: Move right to exit
+                visualVehiclesAL3[i].x += moveAmount;
+            }
+            //Deactivate if off-screen
+            if (visualVehiclesAL3[i].x > WINDOW_WIDTH + VEHICLE_WIDTH) {
+                visualVehiclesAL3[i].active = false;
+            }
+        }
+    }
+    
+    //Update CL3 vehicles (going left, then turn left to BL1 - exit down)
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesCL3[i].active) {
+            if (!visualVehiclesCL3[i].hasCompletedTurn) {
+                //Phase 1: Move left to turning point
+                visualVehiclesCL3[i].x -= moveAmount;
+                if (visualVehiclesCL3[i].x <= LANE_BL1_X) {
+                    visualVehiclesCL3[i].x = LANE_BL1_X;
+                    visualVehiclesCL3[i].hasCompletedTurn = true;
+                }
+            } else {
+                //Phase 2: Move down to exit
+                visualVehiclesCL3[i].y += moveAmount;
+            }
+            //Deactivate if off-screen
+            if (visualVehiclesCL3[i].y > WINDOW_HEIGHT + VEHICLE_HEIGHT) {
+                visualVehiclesCL3[i].active = false;
+            }
+        }
+    }
+    
+    //Update BL3 vehicles (going up, then turn left to DL1 - exit left)
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesBL3[i].active) {
+            if (!visualVehiclesBL3[i].hasCompletedTurn) {
+                //Phase 1: Move up to turning point
+                visualVehiclesBL3[i].y -= moveAmount;
+                if (visualVehiclesBL3[i].y <= LANE_DL1_Y) {
+                    visualVehiclesBL3[i].y = LANE_DL1_Y;
+                    visualVehiclesBL3[i].hasCompletedTurn = true;
+                }
+            } else {
+                //Phase 2: Move left to exit
+                visualVehiclesBL3[i].x -= moveAmount;
+            }
+            //Deactivate if off-screen
+            if (visualVehiclesBL3[i].x < -VEHICLE_WIDTH) {
+                visualVehiclesBL3[i].active = false;
+            }
+        }
+    }
+    
+    //Update DL3 vehicles (going right, then turn left to AL1 - exit up)
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesDL3[i].active) {
+            if (!visualVehiclesDL3[i].hasCompletedTurn) {
+                //Phase 1: Move right to turning point
+                visualVehiclesDL3[i].x += moveAmount;
+                if (visualVehiclesDL3[i].x >= LANE_AL1_X) {
+                    visualVehiclesDL3[i].x = LANE_AL1_X;
+                    visualVehiclesDL3[i].hasCompletedTurn = true;
+                }
+            } else {
+                //Phase 2: Move up to exit
+                visualVehiclesDL3[i].y -= moveAmount;
+            }
+            //Deactivate if off-screen
+            if (visualVehiclesDL3[i].y < -VEHICLE_HEIGHT) {
+                visualVehiclesDL3[i].active = false;
+            }
+        }
+    }
+}
+
+//Draw visual-only vehicles
+void drawVisualVehicles(SDL_Renderer *renderer)
+{
+    //Draw AL3 vehicles - BLUE (same as Road A: 0, 100, 255)
+    SDL_SetRenderDrawColor(renderer, 0, 100, 255, 255);
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesAL3[i].active) {
+            SDL_Rect vehicleRect = {
+                (int)visualVehiclesAL3[i].x,
+                (int)visualVehiclesAL3[i].y,
+                VEHICLE_WIDTH,
+                VEHICLE_HEIGHT
+            };
+            SDL_RenderFillRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 0, 100, 255, 255);
+        }
+    }
+    
+    //Draw CL3 vehicles - GREEN (same as Road C: 50, 255, 50)
+    SDL_SetRenderDrawColor(renderer, 50, 255, 50, 255);
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesCL3[i].active) {
+            SDL_Rect vehicleRect = {
+                (int)visualVehiclesCL3[i].x,
+                (int)visualVehiclesCL3[i].y,
+                VEHICLE_WIDTH,
+                VEHICLE_HEIGHT
+            };
+            SDL_RenderFillRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 50, 255, 50, 255);
+        }
+    }
+    
+    //Draw BL3 vehicles - RED (same as Road B: 255, 50, 50)
+    SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255);
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesBL3[i].active) {
+            SDL_Rect vehicleRect = {
+                (int)visualVehiclesBL3[i].x,
+                (int)visualVehiclesBL3[i].y,
+                VEHICLE_WIDTH,
+                VEHICLE_HEIGHT
+            };
+            SDL_RenderFillRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255);
+        }
+    }
+    
+    //Draw DL3 vehicles - YELLOW (same as Road D: 255, 255, 50)
+    SDL_SetRenderDrawColor(renderer, 255, 255, 50, 255);
+    for (int i = 0; i < MAX_VISUAL_VEHICLES; i++) {
+        if (visualVehiclesDL3[i].active) {
+            SDL_Rect vehicleRect = {
+                (int)visualVehiclesDL3[i].x,
+                (int)visualVehiclesDL3[i].y,
+                VEHICLE_WIDTH,
+                VEHICLE_HEIGHT
+            };
+            SDL_RenderFillRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(renderer, &vehicleRect);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 50, 255);
+        }
+    }
 }
 
 //Get spawn position for new vehicle - always off-screen
@@ -794,16 +1112,16 @@ void drawQueueStatus(SDL_Renderer *renderer, TTF_Font *font, QueueData *queueDat
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderDrawRect(renderer, &statusBox);
 
-    snprintf(statusText, sizeof(statusText), "A: %d vehicles", getQueueSize(queueData->queueA));
+    snprintf(statusText, sizeof(statusText), "AL2: %d vehicles", getQueueSize(queueData->queueA));
     displayText(renderer, font, statusText, 20, 20);
     
-    snprintf(statusText, sizeof(statusText), "B: %d vehicles", getQueueSize(queueData->queueB));
+    snprintf(statusText, sizeof(statusText), "BL2: %d vehicles", getQueueSize(queueData->queueB));
     displayText(renderer, font, statusText, 20, 45);
     
-    snprintf(statusText, sizeof(statusText), "C: %d vehicles", getQueueSize(queueData->queueC));
+    snprintf(statusText, sizeof(statusText), "CL2: %d vehicles", getQueueSize(queueData->queueC));
     displayText(renderer, font, statusText, 20, 70);
     
-    snprintf(statusText, sizeof(statusText), "D: %d vehicles", getQueueSize(queueData->queueD));
+    snprintf(statusText, sizeof(statusText), "DL2: %d vehicles", getQueueSize(queueData->queueD));
     displayText(renderer, font, statusText, 20, 95);
 
     if (queueData->priorityMode) {
@@ -845,6 +1163,9 @@ int main()
     initQueue(queueData.queueB);
     initQueue(queueData.queueC);
     initQueue(queueData.queueD);
+    
+    //Initialize visual-only vehicles (L1 and L3 lanes)
+    initVisualVehicles();
 
     queueData.currentLane = 0;
     queueData.priorityMode = 0;
@@ -861,16 +1182,22 @@ int main()
     pthread_create(&tQueue, NULL, checkQueue, &sharedData);
     pthread_create(&tReadFile, NULL, readAndParseFile, &queueData);
 
+    const int TARGET_FPS = 60;
+    const int FRAME_DELAY = 1000 / TARGET_FPS;  // ~16ms per frame
+    Uint32 frameStart;
+    Uint32 frameTime;
     Uint32 lastTime = SDL_GetTicks();
-    Uint32 currentTime;
     float deltaTime;
 
     bool running = true;
     while (running)
     {
-        currentTime = SDL_GetTicks();
-        deltaTime = (currentTime - lastTime) / 1000.0f;
-        lastTime = currentTime;
+        frameStart = SDL_GetTicks();
+        deltaTime = (frameStart - lastTime) / 1000.0f;
+        
+        // Cap deltaTime to prevent huge jumps
+        if (deltaTime > 0.1f) deltaTime = 0.1f;
+        lastTime = frameStart;
         
         while (SDL_PollEvent(&event)){
             if (event.type == SDL_QUIT)
@@ -879,13 +1206,20 @@ int main()
         
         SDL_LockMutex(mutex);
         updateVehicles(&queueData, deltaTime);
+        updateVisualVehicles(deltaTime);
         refreshLight(renderer, &sharedData, font);
         drawVehicles(renderer, font, &queueData);
+        drawVisualVehicles(renderer);
         drawQueueStatus(renderer, font, &queueData);
         SDL_UnlockMutex(mutex);
 
         SDL_RenderPresent(renderer);
-        SDL_Delay(16);
+        
+        // Frame rate limiting - only delay if we finished early
+        frameTime = SDL_GetTicks() - frameStart;
+        if (frameTime < FRAME_DELAY) {
+            SDL_Delay(FRAME_DELAY - frameTime);
+        }
     }
 
     SDL_DestroyMutex(mutex);
@@ -898,6 +1232,7 @@ int main()
     free(queueData.queueC);
     free(queueData.queueD);
     TTF_CloseFont(font);
+    TTF_Quit();
     if (renderer)
         SDL_DestroyRenderer(renderer);
     if (window)
