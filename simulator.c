@@ -1140,6 +1140,8 @@ void *checkQueue(void *arg)
         int sizeC = getWaitingVehicleCount(queueData->queueC);
         int sizeD = getWaitingVehicleCount(queueData->queueD);
 
+        //Priority mode activation: > 10 vehicles triggers priority mode
+        //Priority mode deactivation: < 5 vehicles exits priority mode
         if (sizeA > PRIORITY_THRESHOLD_HIGH){
             queueData->priorityMode = 1;
             SDL_Log("Priority mode activated!! lane A has %d vehicles", sizeA);
@@ -1152,12 +1154,30 @@ void *checkQueue(void *arg)
         int vehiclesToServe = 0;
 
         if(queueData->priorityMode == 1){
+            //Full priority mode: serve only lane A until < 5 vehicles
             laneToServe = 0;
             vehiclesToServe = sizeA;
             SDL_Log("Priority mode: serving lane A with %d vehicles", vehiclesToServe);
-        }else {
-            int totalNormalVehicles = sizeB + sizeC + sizeD;
-            int avgVehicles = (totalNormalVehicles + 2) / 3;
+        } else if (sizeA > PRIORITY_THRESHOLD_LOW && queueData->currentLane != 0) {
+            //Immediate service: lane A has > 5 vehicles, serve it next (but not full priority)
+            laneToServe = 0;
+            
+            //Calculate average from all 4 lanes for fair serving
+            int totalVehicles = sizeA + sizeB + sizeC + sizeD;
+            int avgVehicles = (totalVehicles + 3) / 4;  //round up division by 4
+            if (avgVehicles < 1) avgVehicles = 1;
+            
+            vehiclesToServe = (sizeA < avgVehicles) ? sizeA : avgVehicles;
+            if (vehiclesToServe < 1 && sizeA > 0) vehiclesToServe = 1;
+            
+            SDL_Log("Immediate service for lane A (>5 vehicles): size=%d, avg=%d, serving %d vehicles", 
+                    sizeA, avgVehicles, vehiclesToServe);
+            //Don't change currentLane - will continue normal rotation after this
+        } else {
+            //Normal mode: serve lanes equally in rotation
+            //Calculate average from all 4 lanes
+            int totalVehicles = sizeA + sizeB + sizeC + sizeD;
+            int avgVehicles = (totalVehicles + 3) / 4;  //round up division by 4
             
             if (avgVehicles < 1) avgVehicles = 1;
             
