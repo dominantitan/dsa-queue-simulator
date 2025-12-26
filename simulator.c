@@ -201,27 +201,27 @@ void setVehicleStraightTarget(VehicleNode *vehicle)
 //Set intermediate target for turning (intersection center area)
 void setVehicleTurnTarget(VehicleNode *vehicle)
 {
-    //First move to intersection center area for turning
+    //Move to the turning point aligned with the outgoing lane
     switch (vehicle->road) {
         case 'A':
-            //A turning right: move down to center, then turn left
-            vehicle->targetX = LANE_D_OUT_Y + VEHICLE_WIDTH;  //adjust X for the turn
-            vehicle->targetY = INTERSECTION_CENTER_Y;
+            //A turning right: move down to D's outgoing lane Y position, then turn left
+            vehicle->targetX = vehicle->x;
+            vehicle->targetY = LANE_D_OUT_Y;  //turn at D's outgoing lane position
             break;
         case 'B':
-            //B turning right: move up to center, then turn right
-            vehicle->targetX = LANE_C_OUT_Y + VEHICLE_WIDTH;
-            vehicle->targetY = INTERSECTION_CENTER_Y;
+            //B turning right: move up to C's outgoing lane Y position, then turn right
+            vehicle->targetX = vehicle->x;
+            vehicle->targetY = LANE_C_OUT_Y;  //turn at C's outgoing lane position
             break;
         case 'C':
-            //C turning right: move left to center, then turn up
-            vehicle->targetX = INTERSECTION_CENTER_X;
-            vehicle->targetY = LANE_A_OUT_X - VEHICLE_HEIGHT;
+            //C turning right: move left to A's outgoing lane X position, then turn up
+            vehicle->targetX = LANE_A_OUT_X;  //turn at A's outgoing lane position
+            vehicle->targetY = vehicle->y;
             break;
         case 'D':
-            //D turning right: move right to center, then turn down
-            vehicle->targetX = INTERSECTION_CENTER_X;
-            vehicle->targetY = LANE_B_OUT_X + VEHICLE_HEIGHT;
+            //D turning right: move right to B's outgoing lane X position, then turn down
+            vehicle->targetX = LANE_B_OUT_X;  //turn at B's outgoing lane position
+            vehicle->targetY = vehicle->y;
             break;
     }
 }
@@ -558,19 +558,23 @@ bool isVehicleInIntersection(VehicleNode *vehicle)
     return false;
 }
 
-//Check if vehicle has reached turning point (center of intersection)
+//Check if vehicle has reached turning point (aligned with outgoing lane)
 bool hasReachedTurningPoint(VehicleNode *vehicle)
 {
     float tolerance = 5.0f;
     switch (vehicle->road) {
         case 'A':
-            return (vehicle->y >= INTERSECTION_CENTER_Y - tolerance);
+            //A turns at D's outgoing lane Y position
+            return (vehicle->y >= LANE_D_OUT_Y - tolerance);
         case 'B':
-            return (vehicle->y <= INTERSECTION_CENTER_Y + tolerance);
+            //B turns at C's outgoing lane Y position
+            return (vehicle->y <= LANE_C_OUT_Y + tolerance);
         case 'C':
-            return (vehicle->x <= INTERSECTION_CENTER_X + tolerance);
+            //C turns at A's outgoing lane X position
+            return (vehicle->x <= LANE_A_OUT_X + tolerance);
         case 'D':
-            return (vehicle->x >= INTERSECTION_CENTER_X - tolerance);
+            //D turns at B's outgoing lane X position
+            return (vehicle->x >= LANE_B_OUT_X - tolerance);
     }
     return false;
 }
